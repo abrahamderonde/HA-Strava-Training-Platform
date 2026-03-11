@@ -1,0 +1,40 @@
+name: "Strava Training Platform"
+description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
+version: "1.0.0"
+slug: "strava-training-app"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+startup: application
+boot: auto
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: "Web Dashboard"
+map:
+  - config:rw
+  - share:rw
+options:
+  strava_client_id: ""
+  strava_client_secret: ""
+  garmin_email: ""
+  garmin_password: ""
+  anthropic_api_key: ""
+  athlete_weight_kg: 70
+  ftp_initial: 200
+schema:
+  strava_client_id: str
+  strava_client_secret: str
+  garmin_email: str
+  garmin_password: str
+  anthropic_api_key: str
+  athlete_weight_kg: int
+  ftp_initial: int
+panel_icon: mdi:bike-fast
+panel_title: "Training"
+homeassistant_api: true
+ingress: true
+ingress_port: 8080
