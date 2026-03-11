@@ -1,1 +1,0 @@
-# Strava Training Platform - Backend
