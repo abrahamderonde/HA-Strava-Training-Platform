@@ -19,7 +19,7 @@ Multi-year distance comparison charts showing how weekly or monthly distance evo
 - Hover tooltip showing exact value per year per week/month
 
 **Notes:**
-- Commute flag is available in the Strava activity data (`commute: true/false`) — needs to be stored in the `Activity` model
+- [done] Commute flag is available in the Strava activity data (`commute: true/false`) — needs to be stored in the `Activity` model
 - Indoor = `sport_type: VirtualRide` or `trainer: true` in Strava data
 
 ---
