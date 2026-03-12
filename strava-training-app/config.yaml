@@ -1,7 +1,7 @@
 name: "Strava Training Platform"
 description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
 version: "1.0.0"
-slug: "strava-training-app"
+slug: "strava_training"
 init: false
 arch:
   - aarch64
@@ -11,9 +11,9 @@ arch:
 startup: application
 boot: auto
 ports:
-  8080/tcp: 8080
+  8088/tcp: 8088
 ports_description:
-  8080/tcp: "Web Dashboard"
+  8088/tcp: "Web Dashboard"
 map:
   - config:rw
   - share:rw
@@ -37,4 +37,4 @@ panel_icon: mdi:bike-fast
 panel_title: "Training"
 homeassistant_api: true
 ingress: true
-ingress_port: 8080
+ingress_port: 8088
