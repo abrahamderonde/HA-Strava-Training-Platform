@@ -80,7 +80,7 @@ All training load calculations are deterministic algorithms — no AI involved.
 
 ## Installation
 
-See [DOCS.md](strava_training/DOCS.md) for full setup instructions.
+See [DOCS.md](strava-training-app/DOCS.md) for full setup instructions.
 
 ---
 
