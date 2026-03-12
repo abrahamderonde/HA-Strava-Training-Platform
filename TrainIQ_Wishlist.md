@@ -114,9 +114,9 @@ A tool to backfill synthetic commute activities for the period before commutes w
 - Main folder name: **`strava-training-app`** (was `strava-training-addon`)
 - `config.yaml` slug: **`strava-training-app`** (was `strava_training`)
 - Update all in-code comments, README, and log messages accordingly
-- **Split README into two files:**
-  - `strava_training/DOCS.md` — HA-focused: setup steps, configuration options, Strava/Garmin/Anthropic connection instructions. Shown in the HA UI Documentation tab.
-  - `README.md` at repo root — GitHub-focused: project overview, feature list, screenshots, tech stack. Shown on the GitHub repo page.
+- **Split README into two files:** ✓ Done
+  - `strava_training/DOCS.md` — HA-focused setup instructions
+  - `README.md` at repo root — GitHub project overview
   - Add `url` field to `config.yaml` pointing to the GitHub repo
 
 ---
