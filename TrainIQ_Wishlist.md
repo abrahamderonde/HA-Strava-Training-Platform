@@ -19,7 +19,7 @@ Multi-year distance comparison charts showing how weekly or monthly distance evo
 - Hover tooltip showing exact value per year per week/month
 
 **Notes:**
-- [done] Commute flag is available in the Strava activity data (`commute: true/false`) — needs to be stored in the `Activity` model
+- Commute flag is available in the Strava activity data (`commute: true/false`) — needs to be stored in the `Activity` model
 - Indoor = `sport_type: VirtualRide` or `trainer: true` in Strava data
 
 ---
@@ -108,4 +108,17 @@ A tool to backfill synthetic commute activities for the period before commutes w
 
 ---
 
-*Last updated: based on discussion during initial development*
+## Structural / Naming Conventions (apply on next rebuild)
+
+- Use **"app"** everywhere instead of "add-on" — this is the current Home Assistant terminology
+- Main folder name: **`strava-training-app`** (was `strava-training-addon`)
+- `config.yaml` slug: **`strava-training-app`** (was `strava_training`)
+- Update all in-code comments, README, and log messages accordingly
+- **Split README into two files:**
+  - `strava_training/DOCS.md` — HA-focused: setup steps, configuration options, Strava/Garmin/Anthropic connection instructions. Shown in the HA UI Documentation tab.
+  - `README.md` at repo root — GitHub-focused: project overview, feature list, screenshots, tech stack. Shown on the GitHub repo page.
+  - Add `url` field to `config.yaml` pointing to the GitHub repo
+
+---
+
+*Last updated: March 2026*
