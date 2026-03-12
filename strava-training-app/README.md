@@ -1,6 +1,6 @@
 # TrainIQ — Strava Training Platform for Home Assistant
 
-A self-hosted cycling training platform running as a Home Assistant app.
+A self-hosted cycling training platform running as a Home Assistant add-on.
 Inspired by intervals.icu + Join.cc, fully under your own control.
 
 ---
@@ -127,7 +127,7 @@ P(t) = W'/t + CP + (Pmax − CP) × e^(−t/τ)
 
 ```
 ┌─────────────────────────────────────────┐
-│         Home Assistant Add-on           │
+│         Home Assistant Add-on            │
 │                                         │
 │  ┌───────────┐    ┌───────────────────┐ │
 │  │  React    │    │   FastAPI         │ │
@@ -172,4 +172,3 @@ cd frontend
 npm install
 npm run dev  # proxies /api to port 8080
 ```
-
