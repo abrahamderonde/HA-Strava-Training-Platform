@@ -33,13 +33,17 @@ RUN npm install && npm run build || echo "WARNING: Frontend build failed"
 WORKDIR /app
 COPY backend /app/backend
 
-# Write the s6 run script directly in the Dockerfile to guarantee permissions
-RUN mkdir -p /etc/services.d/strava-training && \
-    printf '#!/bin/sh\nexport DATA_PATH="/data/strava_training"\nmkdir -p "${DATA_PATH}"\nexec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8088 --workers 1 --log-level info\n' \
-    > /etc/services.d/strava-training/run && \
-    chmod 755 /etc/services.d/strava-training/run
-
 # Data directory
 RUN mkdir -p /data/strava_training
+
+# Write s6 run script using echo and chmod separately
+RUN mkdir -p /etc/services.d/strava-training
+RUN echo '#!/usr/bin/with-contenv sh' > /etc/services.d/strava-training/run
+RUN echo 'export DATA_PATH="/data/strava_training"' >> /etc/services.d/strava-training/run
+RUN echo 'mkdir -p "${DATA_PATH}"' >> /etc/services.d/strava-training/run
+RUN echo 'exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8088 --workers 1 --log-level info' >> /etc/services.d/strava-training/run
+RUN chmod 755 /etc/services.d/strava-training/run
+RUN cat /etc/services.d/strava-training/run
+RUN ls -la /etc/services.d/strava-training/
 
 EXPOSE 8088
