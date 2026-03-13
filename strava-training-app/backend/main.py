@@ -229,15 +229,14 @@ async def get_settings():
 async def get_strava_auth_url(request: Request, ha_url: str = None):
     """Return the Strava OAuth URL."""
     if ha_url:
-        # Strip trailing slash, ensure it has a scheme
         base = ha_url.rstrip("/")
         if not base.startswith("http"):
-            base = f"https://{base}"
+            base = f"http://{base}"
         redirect_uri = f"{base}/trainiq/strava/callback"
     else:
-        # Fallback: use request base URL (works for direct access, not ingress)
-        base_url = str(request.base_url).rstrip("/")
-        redirect_uri = f"{base_url}/trainiq/strava/callback"
+        # Use host from request but with our actual port
+        host = request.headers.get("host", "homeassistant.local").split(":")[0]
+        redirect_uri = f"http://{host}:8088/trainiq/strava/callback"
     service = StravaService(
         CONFIG["strava_client_id"],
         CONFIG["strava_client_secret"],
