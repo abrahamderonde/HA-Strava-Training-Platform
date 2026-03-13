@@ -30,7 +30,6 @@ from .services.training_science import (
     merge_power_curves, POWER_CURVE_DURATIONS, get_power_zones
 )
 from .services.gemeente_service import GemeenteService
-from .routers import activities, analytics, planning, settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
