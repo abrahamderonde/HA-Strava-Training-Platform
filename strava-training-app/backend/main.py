@@ -209,12 +209,30 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
         )
 
 
+# ─── Settings ────────────────────────────────────────────────────────────────
+
+@app.get("/api/settings")
+async def get_settings():
+    """Return non-sensitive config values to the frontend."""
+    return {
+        "athlete_weight_kg": CONFIG.get("athlete_weight_kg", 70),
+        "ftp_initial": CONFIG.get("ftp_initial", 200),
+        "strava_configured": bool(CONFIG.get("strava_client_id")),
+        "garmin_configured": bool(CONFIG.get("garmin_email")),
+        "anthropic_configured": bool(CONFIG.get("anthropic_api_key")),
+    }
+
+
 # ─── Auth / Strava OAuth ──────────────────────────────────────────────────────
 
 @app.get("/api/strava/auth-url")
-async def get_strava_auth_url(request: Request):
-    base_url = str(request.base_url).rstrip("/")
-    redirect_uri = f"{base_url}/api/strava/callback"
+async def get_strava_auth_url(request: Request, ha_url: str = None):
+    """Return the Strava OAuth URL. ha_url can be passed by the frontend for correct redirect."""
+    if ha_url:
+        redirect_uri = f"{ha_url.rstrip('/')}/api/strava/callback"
+    else:
+        base_url = str(request.base_url).rstrip("/")
+        redirect_uri = f"{base_url}/api/strava/callback"
     service = StravaService(
         CONFIG["strava_client_id"],
         CONFIG["strava_client_secret"],
