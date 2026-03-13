@@ -47,19 +47,6 @@ export default function App() {
             <span>TrainIQ</span>
           </div>
 
-          {!stravaConnected && (
-            <div className="strava-connect-banner">
-              <a href="#" onClick={async e => {
-                e.preventDefault()
-                const res = await fetch('/api/strava/auth-url')
-                const { url } = await res.json()
-                window.location.href = url
-              }}>
-                Connect Strava
-              </a>
-            </div>
-          )}
-
           <ul className="nav-links">
             {NAV.map(({ to, icon: Icon, label }) => (
               <li key={to}>
