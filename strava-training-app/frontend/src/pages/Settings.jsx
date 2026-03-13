@@ -24,7 +24,7 @@ export default function Settings() {
     setLoading(true)
     try {
       const callbackUrl = haUrl.trim() || window.location.origin
-      const fetchUrl = `/api/strava/auth-url?ha_url=${encodeURIComponent(callbackUrl)}`
+      const fetchUrl = `/trainiq/strava/auth-url?ha_url=${encodeURIComponent(callbackUrl)}`
       console.log('Fetching auth URL from:', fetchUrl)
       const res = await fetch(fetchUrl)
       console.log('Response status:', res.status)
