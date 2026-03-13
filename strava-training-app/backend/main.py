@@ -227,10 +227,15 @@ async def get_settings():
 
 @app.get("/api/strava/auth-url")
 async def get_strava_auth_url(request: Request, ha_url: str = None):
-    """Return the Strava OAuth URL. ha_url can be passed by the frontend for correct redirect."""
+    """Return the Strava OAuth URL."""
     if ha_url:
-        redirect_uri = f"{ha_url.rstrip('/')}/api/strava/callback"
+        # Strip trailing slash, ensure it has a scheme
+        base = ha_url.rstrip("/")
+        if not base.startswith("http"):
+            base = f"https://{base}"
+        redirect_uri = f"{base}/api/strava/callback"
     else:
+        # Fallback: use request base URL (works for direct access, not ingress)
         base_url = str(request.base_url).rstrip("/")
         redirect_uri = f"{base_url}/api/strava/callback"
     service = StravaService(
