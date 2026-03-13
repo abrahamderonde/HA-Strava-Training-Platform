@@ -1,6 +1,6 @@
 name: "Strava Training Platform"
 description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
-version: "0.1.7"
+version: "0.1.8"
 slug: "strava-training-app"
 init: false
 arch:
