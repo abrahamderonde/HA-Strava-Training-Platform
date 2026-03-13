@@ -62,19 +62,6 @@ class Activity(Base):
     # CBS gemeente codes this activity passed through
     gemeente_codes = Column(JSON, nullable=True)
 
-
-class VisitedGemeente(Base):
-    """Cache of which gemeenten have been visited across all activities"""
-    __tablename__ = "visited_gemeenten"
-
-    id = Column(Integer, primary_key=True)
-    gemeente_code = Column(String, unique=True, index=True)  # CBS code e.g. "GM0363"
-    gemeente_name = Column(String)
-    first_visit_date = Column(DateTime)
-    first_activity_id = Column(Integer)
-    visit_count = Column(Integer, default=1)
-
-
 class PowerCurve(Base):
     """Cached best mean maximal power values per duration (seconds)"""
     __tablename__ = "power_curve"
