@@ -29,7 +29,7 @@ export default function Eddington() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/eddington')
+    fetch('/trainiq/eddington')
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))

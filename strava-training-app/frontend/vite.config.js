@@ -6,7 +6,7 @@ export default defineConfig({
   base: './',
   server: {
     proxy: {
-      '/api': 'http://localhost:8088'
+      '/trainiq': 'http://localhost:8088'
     }
   },
   build: {

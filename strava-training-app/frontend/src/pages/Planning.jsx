@@ -38,7 +38,7 @@ export default function Planning() {
   const [availableDays, setAvailableDays] = useState([0, 1, 2, 3, 5]) // Mon-Fri + Sat
 
   useEffect(() => {
-    fetch('/api/goals').then(r => r.json()).then(setGoals)
+    fetch('/trainiq/goals').then(r => r.json()).then(setGoals)
     fetchWorkoutsForWeek()
   }, [])
 
@@ -52,12 +52,12 @@ export default function Planning() {
 
   const createGoal = async () => {
     setLoading(true)
-    await fetch('/api/goals', {
+    await fetch('/trainiq/goals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newGoal),
     })
-    const updated = await fetch('/api/goals').then(r => r.json())
+    const updated = await fetch('/trainiq/goals').then(r => r.json())
     setGoals(updated)
     setShowNewGoal(false)
     setLoading(false)
@@ -66,7 +66,7 @@ export default function Planning() {
   const generateWeek = async () => {
     setGenerating(true)
     const activeGoal = goals.find(g => g.active)
-    const res = await fetch('/api/planning/generate-week', {
+    const res = await fetch('/trainiq/planning/generate-week', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

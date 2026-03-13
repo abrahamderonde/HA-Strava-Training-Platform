@@ -36,7 +36,7 @@ export default function Gemeenten() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/gemeenten/visited')
+      const res = await fetch('/trainiq/gemeenten/visited')
       const data = await res.json()
       setVisited(data.visited || [])
       setStats(data.stats || null)
@@ -71,7 +71,7 @@ export default function Gemeenten() {
     if (!L) return
 
     try {
-      const res = await fetch('/api/gemeenten/boundaries')
+      const res = await fetch('/trainiq/gemeenten/boundaries')
       const geojson = await res.json()
       const visitedCodes = new Set(visited.map(v => v.code))
 
@@ -126,7 +126,7 @@ export default function Gemeenten() {
 
   const triggerScan = async () => {
     setScanning(true)
-    await fetch('/api/gemeenten/scan-all', { method: 'POST' })
+    await fetch('/trainiq/gemeenten/scan-all', { method: 'POST' })
     setTimeout(async () => {
       await fetchData()
       setScanning(false)

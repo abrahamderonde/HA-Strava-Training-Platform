@@ -57,9 +57,9 @@ export default function PowerCurve() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/analytics/power-curve').then(r => r.json()),
-      fetch('/api/analytics/ftp').then(r => r.json()),
-      fetch('/api/analytics/zones').then(r => r.json()),
+      fetch('/trainiq/analytics/power-curve').then(r => r.json()),
+      fetch('/trainiq/analytics/ftp').then(r => r.json()),
+      fetch('/trainiq/analytics/zones').then(r => r.json()),
     ]).then(([curveData, ftpData, zonesData]) => {
       const enriched = curveData.map(d => ({
         ...d,

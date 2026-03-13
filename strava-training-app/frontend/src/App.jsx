@@ -32,7 +32,7 @@ export default function App() {
   const [stravaConnected, setStravaConnected] = useState(false)
 
   useEffect(() => {
-    fetch('/api/strava/status')
+    fetch('/trainiq/strava/status')
       .then(r => r.json())
       .then(d => setStravaConnected(d.authenticated))
       .catch(() => {})

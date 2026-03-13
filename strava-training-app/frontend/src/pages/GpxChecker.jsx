@@ -61,7 +61,7 @@ export default function GpxChecker() {
     const L = window.L
     if (!L) return
     try {
-      const geoRes = await fetch('/api/gemeenten/boundaries')
+      const geoRes = await fetch('/trainiq/gemeenten/boundaries')
       const geojson = await geoRes.json()
       const newCodes = new Set(res.new_gemeenten?.map(g => g.code) || [])
       const alreadyCodes = new Set(res.already_gemeenten?.map(g => g.code) || [])
@@ -113,7 +113,7 @@ export default function GpxChecker() {
     form.append('file', file)
 
     try {
-      const res = await fetch('/api/gemeenten/check-gpx', { method: 'POST', body: form })
+      const res = await fetch('/trainiq/gemeenten/check-gpx', { method: 'POST', body: form })
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       if (data.error) { setError(data.error); return }

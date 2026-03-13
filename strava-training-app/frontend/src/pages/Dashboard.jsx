@@ -28,9 +28,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/analytics/pmc?days=30').then(r => r.json()),
-      fetch('/api/analytics/ftp').then(r => r.json()),
-      fetch('/api/activities?per_page=5').then(r => r.json()),
+      fetch('/trainiq/analytics/pmc?days=30').then(r => r.json()),
+      fetch('/trainiq/analytics/ftp').then(r => r.json()),
+      fetch('/trainiq/activities?per_page=5').then(r => r.json()),
     ]).then(([pmcData, ftpData, actData]) => {
       setPmc(pmcData)
       setFtp(ftpData)
@@ -46,7 +46,7 @@ export default function Dashboard() {
   const triggerImport = async () => {
     setImporting(true)
     setImportStatus('Importing…')
-    await fetch('/api/strava/import', { method: 'POST' })
+    await fetch('/trainiq/strava/import', { method: 'POST' })
     setImportStatus('Import started — this may take a few minutes')
     setImporting(false)
   }

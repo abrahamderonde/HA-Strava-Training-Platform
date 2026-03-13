@@ -8,12 +8,12 @@ export default function Settings() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    fetch('/api/strava/status')
+    fetch('/trainiq/strava/status')
       .then(r => r.json())
       .then(setStatus)
       .catch(e => console.error('Status fetch failed:', e))
 
-    fetch('/api/settings')
+    fetch('/trainiq/settings')
       .then(r => r.json())
       .then(setConfig)
       .catch(e => console.error('Settings fetch failed:', e))
