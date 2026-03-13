@@ -211,7 +211,7 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
 
 # ─── Settings ────────────────────────────────────────────────────────────────
 
-@app.get("/api/settings")
+@app.get("/trainiq/settings")
 async def get_settings():
     """Return non-sensitive config values to the frontend."""
     return {
@@ -225,7 +225,7 @@ async def get_settings():
 
 # ─── Auth / Strava OAuth ──────────────────────────────────────────────────────
 
-@app.get("/api/strava/auth-url")
+@app.get("/trainiq/strava/auth-url")
 async def get_strava_auth_url(request: Request, ha_url: str = None):
     """Return the Strava OAuth URL."""
     if ha_url:
@@ -233,11 +233,11 @@ async def get_strava_auth_url(request: Request, ha_url: str = None):
         base = ha_url.rstrip("/")
         if not base.startswith("http"):
             base = f"https://{base}"
-        redirect_uri = f"{base}/api/strava/callback"
+        redirect_uri = f"{base}/trainiq/strava/callback"
     else:
         # Fallback: use request base URL (works for direct access, not ingress)
         base_url = str(request.base_url).rstrip("/")
-        redirect_uri = f"{base_url}/api/strava/callback"
+        redirect_uri = f"{base_url}/trainiq/strava/callback"
     service = StravaService(
         CONFIG["strava_client_id"],
         CONFIG["strava_client_secret"],
@@ -246,7 +246,7 @@ async def get_strava_auth_url(request: Request, ha_url: str = None):
     return {"url": service.get_auth_url(redirect_uri)}
 
 
-@app.get("/api/strava/callback")
+@app.get("/trainiq/strava/callback")
 async def strava_callback(code: str, db: AsyncSession = Depends(get_db)):
     service = StravaService(
         CONFIG["strava_client_id"],
@@ -260,7 +260,7 @@ async def strava_callback(code: str, db: AsyncSession = Depends(get_db)):
     return RedirectResponse(url="/?strava_connected=1")
 
 
-@app.get("/api/strava/status")
+@app.get("/trainiq/strava/status")
 async def strava_status(db: AsyncSession = Depends(get_db)):
     service = StravaService(
         CONFIG["strava_client_id"],
@@ -272,7 +272,7 @@ async def strava_status(db: AsyncSession = Depends(get_db)):
 
 # ─── Strava Webhook ──────────────────────────────────────────────────────────
 
-@app.get("/api/strava/webhook")
+@app.get("/trainiq/strava/webhook")
 async def webhook_verify(
     hub_mode: str = None,
     hub_challenge: str = None,
@@ -284,7 +284,7 @@ async def webhook_verify(
     raise HTTPException(status_code=403)
 
 
-@app.post("/api/strava/webhook")
+@app.post("/trainiq/strava/webhook")
 async def webhook_event(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -326,7 +326,7 @@ async def import_single_activity(activity_id: int, db: AsyncSession):
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-@app.post("/api/strava/import")
+@app.post("/trainiq/strava/import")
 async def trigger_import(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -352,7 +352,7 @@ async def run_full_import(db: AsyncSession):
 
 # ─── Analytics APIs ──────────────────────────────────────────────────────────
 
-@app.get("/api/analytics/pmc")
+@app.get("/trainiq/analytics/pmc")
 async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
     cutoff = datetime.now() - timedelta(days=days)
     result = await db.execute(
@@ -373,7 +373,7 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@app.get("/api/analytics/power-curve")
+@app.get("/trainiq/analytics/power-curve")
 async def get_power_curve(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(PowerCurve).order_by(PowerCurve.duration_seconds)
@@ -382,7 +382,7 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
     return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
 
 
-@app.get("/api/analytics/ftp")
+@app.get("/trainiq/analytics/ftp")
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
@@ -401,7 +401,7 @@ async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     }
 
 
-@app.get("/api/analytics/zones")
+@app.get("/trainiq/analytics/zones")
 async def get_zones(db: AsyncSession = Depends(get_db)):
     ftp = await get_current_ftp(db)
     return {"ftp": ftp, "zones": get_power_zones(ftp)}
@@ -409,7 +409,7 @@ async def get_zones(db: AsyncSession = Depends(get_db)):
 
 # ─── Activities ──────────────────────────────────────────────────────────────
 
-@app.get("/api/activities")
+@app.get("/trainiq/activities")
 async def get_activities(
     page: int = 1,
     per_page: int = 20,
@@ -425,7 +425,7 @@ async def get_activities(
     return [_activity_to_dict(a) for a in activities]
 
 
-@app.get("/api/activities/calendar")
+@app.get("/trainiq/activities/calendar")
 async def get_calendar_activities(
     year: int = None,
     month: int = None,
@@ -477,7 +477,7 @@ async def get_calendar_activities(
 
 # ─── Planning ────────────────────────────────────────────────────────────────
 
-@app.get("/api/goals")
+@app.get("/trainiq/goals")
 async def get_goals(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(TrainingGoal).order_by(TrainingGoal.created_at.desc())
@@ -498,7 +498,7 @@ async def get_goals(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@app.post("/api/goals")
+@app.post("/trainiq/goals")
 async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     ftp = await get_current_ftp(db)
@@ -536,7 +536,7 @@ async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
     return {"id": goal.id, "status": "created"}
 
 
-@app.post("/api/planning/generate-week")
+@app.post("/trainiq/planning/generate-week")
 async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
     """Generate AI workout plan for a week."""
     data = await request.json()
@@ -617,7 +617,7 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
     return plan
 
 
-@app.post("/api/planning/export-to-garmin/{workout_id}")
+@app.post("/trainiq/planning/export-to-garmin/{workout_id}")
 async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Export a planned workout to Garmin Connect."""
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
@@ -642,7 +642,7 @@ async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to export to Garmin")
 
 
-@app.get("/api/planning/workouts")
+@app.get("/trainiq/planning/workouts")
 async def get_planned_workouts(
     from_date: str = None,
     to_date: str = None,
@@ -712,7 +712,7 @@ def _activity_to_dict(a: Activity) -> Dict:
 
 # ─── Gemeenten / Municipalities ───────────────────────────────────────────────
 
-@app.get("/api/gemeenten/boundaries")
+@app.get("/trainiq/gemeenten/boundaries")
 async def get_gemeente_boundaries(db: AsyncSession = Depends(get_db)):
     """Return all Dutch gemeente boundaries as GeoJSON (from PDOK cache)."""
     svc = GemeenteService(db)
@@ -720,7 +720,7 @@ async def get_gemeente_boundaries(db: AsyncSession = Depends(get_db)):
     return svc.get_boundaries_geojson()
 
 
-@app.get("/api/gemeenten/visited")
+@app.get("/trainiq/gemeenten/visited")
 async def get_visited_gemeenten(db: AsyncSession = Depends(get_db)):
     """Return all uniquely visited gemeenten with first visit date."""
     svc = GemeenteService(db)
@@ -729,7 +729,7 @@ async def get_visited_gemeenten(db: AsyncSession = Depends(get_db)):
     return {"visited": visited, "stats": stats}
 
 
-@app.post("/api/gemeenten/scan-all")
+@app.post("/trainiq/gemeenten/scan-all")
 async def scan_all_activities_for_gemeenten(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -758,7 +758,7 @@ async def _scan_all_gemeenten():
         logger.info("Gemeente scan complete")
 
 
-@app.post("/api/gemeenten/check-gpx")
+@app.post("/trainiq/gemeenten/check-gpx")
 async def check_gpx(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -772,7 +772,7 @@ async def check_gpx(
 
 # ─── Eddington Number ─────────────────────────────────────────────────────────
 
-@app.get("/api/eddington")
+@app.get("/trainiq/eddington")
 async def get_eddington(db: AsyncSession = Depends(get_db)):
     """
     Calculate Eddington number for cycling.
