@@ -90,7 +90,7 @@ export default function Settings() {
                   type="text"
                   value={haUrl}
                   onChange={e => setHaUrl(e.target.value)}
-                  placeholder="homeassistant.local:8123 or abc123.ui.nabu.casa"
+                  placeholder="homeassistant.local:8088"
                   style={{
                     width: '100%', padding: '8px 10px', borderRadius: 6,
                     border: '1px solid var(--border)', background: 'var(--surface2)',
@@ -98,7 +98,7 @@ export default function Settings() {
                   }}
                 />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  In Strava API settings, set Authorization Callback Domain to just the hostname (without https://)
+                  Use port 8088 (direct app port, not 8123). In Strava API settings set Authorization Callback Domain to just the hostname without port.
                 </div>
               </div>
               <button
