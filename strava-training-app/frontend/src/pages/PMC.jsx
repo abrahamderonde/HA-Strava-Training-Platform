@@ -37,7 +37,7 @@ export default function PMC() {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/analytics/pmc?days=${days}`)
+    fetch(`/trainiq/analytics/pmc?days=${days}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))

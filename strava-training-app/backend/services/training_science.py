@@ -230,8 +230,8 @@ def _cp3_model(t: np.ndarray, cp: float, w_prime: float, p_max: float) -> np.nda
 
 def fit_critical_power(
     power_curve: Dict[int, float],
-    min_duration: int = 2,
-    max_duration: int = 1200,
+    min_duration: int = 120,    # start at 2 min — short sprints distort CP
+    max_duration: int = 1200,   # up to 20 min
 ) -> Optional[Dict]:
     """
     Fit the 3-parameter critical power model to a power curve.
@@ -256,7 +256,12 @@ def fit_critical_power(
     p = np.array(powers)
 
     # Initial parameter estimates
-    cp_init = float(np.percentile(p, 20))   # CP ~ low end of longer efforts
+    # CP should be close to 20-min power — use 80th percentile of longer efforts
+    long_mask = t >= 600  # 10+ min efforts
+    if np.sum(long_mask) >= 2:
+        cp_init = float(np.mean(p[long_mask]) * 0.95)
+    else:
+        cp_init = float(np.percentile(p, 30))
     p_max_init = float(np.max(p))
     w_prime_init = 20000.0  # typical W' ~15-25 kJ
 
@@ -266,12 +271,19 @@ def fit_critical_power(
             t, p,
             p0=[cp_init, w_prime_init, p_max_init],
             bounds=(
-                [50, 1000, cp_init],         # lower bounds
-                [500, 100000, 2000]          # upper bounds
+                [50,  1000,  p_max_init * 0.5],   # lower bounds
+                [500, 100000, 2000]                 # upper bounds
             ),
             maxfev=10000,
         )
         cp, w_prime, p_max = popt
+
+        # Sanity check: CP should be plausible relative to 20-min power
+        if len(p[long_mask]) > 0:
+            p20_approx = float(np.min(p[t >= 1200])) if np.sum(t >= 1200) > 0 else float(np.min(p[long_mask]))
+            if cp > p20_approx * 1.10:
+                logger.warning("CP %.1fW seems too high vs 20-min power %.1fW, capping", cp, p20_approx)
+                cp = p20_approx * 1.05  # CP is typically ~95-105% of 20-min power
 
         # Calculate R²
         p_pred = _cp3_model(t, *popt)

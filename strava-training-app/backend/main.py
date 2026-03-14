@@ -246,13 +246,18 @@ async def get_strava_auth_url(request: Request, ha_url: str = None):
 
 
 @app.get("/trainiq/strava/callback")
-async def strava_callback(code: str, db: AsyncSession = Depends(get_db)):
+@app.get("/trainiq/strava/callback")
+async def strava_callback(code: str, request: Request, db: AsyncSession = Depends(get_db)):
     service = StravaService(
         CONFIG["strava_client_id"],
         CONFIG["strava_client_secret"],
         db,
     )
-    token_data = await service.exchange_code(code)
+    # Reconstruct the redirect_uri that was used during authorization
+    host = request.headers.get("host", "homeassistant.local:8088").split(":")[0]
+    redirect_uri = f"http://{host}:8088/trainiq/strava/callback"
+    logger.info("Strava callback received, exchanging code with redirect_uri: %s", redirect_uri)
+    token_data = await service.exchange_code(code, redirect_uri=redirect_uri)
     if not token_data:
         raise HTTPException(status_code=400, detail="Failed to exchange Strava code")
     await service.save_token(token_data)
@@ -351,7 +356,20 @@ async def run_full_import(db: AsyncSession):
 
 # ─── Analytics APIs ──────────────────────────────────────────────────────────
 
-@app.get("/trainiq/analytics/pmc")
+@app.post("/trainiq/analytics/recalculate")
+async def trigger_recalculate(background_tasks: BackgroundTasks):
+    """Manually trigger PMC + power curve + FTP recalculation."""
+    async def _recalc():
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await recalculate_pmc(session)
+            await recalculate_power_curve_and_ftp(session)
+            logger.info("Manual recalculation complete")
+    background_tasks.add_task(_recalc)
+    return {"status": "Recalculation started"}
+
+
+
 async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
     cutoff = datetime.now() - timedelta(days=days)
     result = await db.execute(

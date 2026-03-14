@@ -51,6 +51,12 @@ export default function Dashboard() {
     setImporting(false)
   }
 
+  const triggerRecalculate = async () => {
+    setImportStatus('Recalculating…')
+    await fetch('/trainiq/analytics/recalculate', { method: 'POST' })
+    setImportStatus('Recalculation started — refresh in a moment')
+  }
+
   return (
     <div>
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -62,6 +68,9 @@ export default function Dashboard() {
           {importStatus && (
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{importStatus}</span>
           )}
+          <button className="btn btn-ghost btn-sm" onClick={triggerRecalculate}>
+            Recalculate
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={triggerImport} disabled={importing}>
             <Activity size={13} />
             {importing ? 'Starting…' : 'Sync Strava'}

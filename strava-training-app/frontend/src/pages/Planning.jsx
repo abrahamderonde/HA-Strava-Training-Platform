@@ -45,7 +45,7 @@ export default function Planning() {
   const fetchWorkoutsForWeek = () => {
     const from = format(weekStart, 'yyyy-MM-dd')
     const to   = format(addDays(weekStart, 6), 'yyyy-MM-dd')
-    fetch(`/api/planning/workouts?from_date=${from}&to_date=${to}`)
+    fetch(`/trainiq/planning/workouts?from_date=${from}&to_date=${to}`)
       .then(r => r.json())
       .then(setWorkouts)
   }
@@ -83,7 +83,7 @@ export default function Planning() {
 
   const exportToGarmin = async (workoutId) => {
     setExportingId(workoutId)
-    await fetch(`/api/planning/export-to-garmin/${workoutId}`, { method: 'POST' })
+    await fetch(`/trainiq/planning/export-to-garmin/${workoutId}`, { method: 'POST' })
     fetchWorkoutsForWeek()
     setExportingId(null)
   }

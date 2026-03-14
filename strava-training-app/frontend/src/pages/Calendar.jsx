@@ -23,7 +23,7 @@ export default function Calendar() {
     setLoading(true)
     const y = currentDate.getFullYear()
     const m = currentDate.getMonth() + 1
-    fetch(`/api/activities/calendar?year=${y}&month=${m}`)
+    fetch(`/trainiq/activities/calendar?year=${y}&month=${m}`)
       .then(r => r.json())
       .then(d => { setCalData(d); setLoading(false) })
       .catch(() => setLoading(false))

@@ -62,6 +62,7 @@ class Activity(Base):
     # CBS gemeente codes this activity passed through
     gemeente_codes = Column(JSON, nullable=True)
 
+
 class PowerCurve(Base):
     """Cached best mean maximal power values per duration (seconds)"""
     __tablename__ = "power_curve"

@@ -43,16 +43,20 @@ class StravaService:
             f"&scope=read,activity:read_all"
         )
 
-    async def exchange_code(self, code: str) -> Optional[Dict]:
+    async def exchange_code(self, code: str, redirect_uri: str = None) -> Optional[Dict]:
         async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{STRAVA_AUTH}/token", data={
+            payload = {
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "code": code,
                 "grant_type": "authorization_code",
-            })
+            }
+            if redirect_uri:
+                payload["redirect_uri"] = redirect_uri
+            resp = await client.post(f"{STRAVA_AUTH}/token", data=payload)
             if resp.status_code == 200:
                 return resp.json()
+            logger.error("Strava token exchange failed: %s %s", resp.status_code, resp.text)
         return None
 
     async def _get_valid_token(self) -> Optional[str]:
