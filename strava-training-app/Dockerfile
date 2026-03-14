@@ -2,11 +2,10 @@ ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # Install Python, Node.js and build tools
+# Note: do NOT install py3-numpy or py3-scipy - we install specific versions via pip
 RUN apk add --no-cache \
     python3 \
     py3-pip \
-    py3-numpy \
-    py3-scipy \
     nodejs \
     npm \
     gcc \
@@ -15,7 +14,9 @@ RUN apk add --no-cache \
     libffi-dev \
     openssl-dev \
     geos \
-    geos-dev
+    geos-dev \
+    g++ \
+    openblas-dev
 
 WORKDIR /app
 
@@ -36,14 +37,13 @@ COPY backend /app/backend
 # Data directory
 RUN mkdir -p /data/strava_training
 
-# Write s6 run script entirely within Docker RUN (no COPY from repo)
+# Write s6 run script with correct permissions
 RUN mkdir -p /etc/services.d/strava-training \
     && echo '#!/usr/bin/with-contenv sh' > /etc/services.d/strava-training/run \
     && echo 'export DATA_PATH="/data/strava_training"' >> /etc/services.d/strava-training/run \
     && echo 'mkdir -p "${DATA_PATH}"' >> /etc/services.d/strava-training/run \
     && echo 'cd /app' >> /etc/services.d/strava-training/run \
     && echo 'exec python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8088 --workers 1 --log-level info' >> /etc/services.d/strava-training/run \
-    && chmod 755 /etc/services.d/strava-training/run \
-    && ls -la /etc/services.d/strava-training/run
+    && chmod 755 /etc/services.d/strava-training/run
 
 EXPOSE 8088
