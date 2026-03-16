@@ -25,11 +25,11 @@ from ..models.database import Activity, VisitedGemeente
 
 logger = logging.getLogger(__name__)
 
-# PDOK WFS endpoint for CBS gemeente boundaries (2024)
+# PDOK WFS endpoint for CBS gemeente boundaries (2025)
 PDOK_WFS_BASE = (
-    "https://service.pdok.nl/cbs/gebiedsindelingen/2024/wfs/v1_0"
+    "https://service.pdok.nl/cbs/gebiedsindelingen/2025/wfs/v1_0"
     "?service=WFS&version=2.0.0&request=GetFeature"
-    "&typeName=gebiedsindelingen:cbs_gemeente_2024_gegeneraliseerd"
+    "&typeName=gemeente_gegeneraliseerd"
     "&outputFormat=application/json&count=500"
 )
 
