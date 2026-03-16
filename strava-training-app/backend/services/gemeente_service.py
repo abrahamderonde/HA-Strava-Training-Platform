@@ -26,11 +26,14 @@ from ..models.database import Activity, VisitedGemeente
 logger = logging.getLogger(__name__)
 
 # PDOK WFS endpoint for CBS gemeente boundaries (2025)
+# srsName=EPSG:4326 requests WGS84 (lon/lat) instead of default RD New
 PDOK_WFS_BASE = (
     "https://service.pdok.nl/cbs/gebiedsindelingen/2025/wfs/v1_0"
     "?service=WFS&version=2.0.0&request=GetFeature"
     "&typeName=gemeente_gegeneraliseerd"
-    "&outputFormat=application/json&count=500"
+    "&outputFormat=application/json"
+    "&srsName=EPSG:4326"
+    "&count=500"
 )
 
 CACHE_PATH = Path("/data/strava_training/gemeente_boundaries.json.gz")
