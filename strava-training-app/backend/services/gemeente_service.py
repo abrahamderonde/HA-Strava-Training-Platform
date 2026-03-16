@@ -119,7 +119,8 @@ class GemeenteService:
     def _build_index(self):
         """Build a spatial index over gemeente shapes for fast lookup."""
         from shapely.strtree import STRtree
-        self._index = STRtree([g["shape"] for g in self._shapes])
+        self._geoms = [g["shape"] for g in self._shapes]
+        self._index = STRtree(self._geoms)
 
     def find_gemeenten_for_track(self, coords: List[Tuple[float, float]]) -> List[Dict]:
         """
@@ -131,14 +132,21 @@ class GemeenteService:
             return []
         if not hasattr(self, '_index') or self._index is None:
             self._build_index()
-        step = max(1, len(coords) // 500)   # sample fewer points — index makes each check cheap
+            # One-time diagnostic
+            if self._shapes and coords:
+                b = self._shapes[0]["shape"].bounds
+                logger.info("DIAG shape[0] '%s' bounds: %.3f,%.3f -> %.3f,%.3f",
+                            self._shapes[0]["name"], b[0], b[1], b[2], b[3])
+                logger.info("DIAG first coord (lon,lat): %.4f, %.4f", coords[0][0], coords[0][1])
+        step = max(1, len(coords) // 500)
         sampled = coords[::step]
         hit_codes: Set[str] = set()
         for lon, lat in sampled:
             pt = Point(lon, lat)
-            # STRtree query returns candidate indices — only check those
-            candidates = self._index.query(pt)
-            for idx in candidates:
+            # In Shapely 2.x STRtree.query() returns array of integer indices
+            candidate_indices = self._index.query(pt)
+            for idx in candidate_indices:
+                idx = int(idx)  # ensure it's a plain int, not numpy int
                 gem = self._shapes[idx]
                 if gem["code"] not in hit_codes and gem["shape"].contains(pt):
                     hit_codes.add(gem["code"])
