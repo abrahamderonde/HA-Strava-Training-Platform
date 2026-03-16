@@ -116,19 +116,30 @@ class GemeenteService:
     #  Point-in-polygon                                                    #
     # ------------------------------------------------------------------ #
 
+    def _build_index(self):
+        """Build a spatial index over gemeente shapes for fast lookup."""
+        from shapely.strtree import STRtree
+        self._index = STRtree([g["shape"] for g in self._shapes])
+
     def find_gemeenten_for_track(self, coords: List[Tuple[float, float]]) -> List[Dict]:
         """
         coords: list of (lon, lat)
         Returns list of {code, name} for all crossed gemeenten.
+        Uses STRtree spatial index for fast point-in-polygon.
         """
         if not self._shapes or not coords:
             return []
-        step = max(1, len(coords) // 2000)
+        if not hasattr(self, '_index') or self._index is None:
+            self._build_index()
+        step = max(1, len(coords) // 500)   # sample fewer points — index makes each check cheap
         sampled = coords[::step]
         hit_codes: Set[str] = set()
         for lon, lat in sampled:
             pt = Point(lon, lat)
-            for gem in self._shapes:
+            # STRtree query returns candidate indices — only check those
+            candidates = self._index.query(pt)
+            for idx in candidates:
+                gem = self._shapes[idx]
                 if gem["code"] not in hit_codes and gem["shape"].contains(pt):
                     hit_codes.add(gem["code"])
         return [{"code": g["code"], "name": g["name"]}
