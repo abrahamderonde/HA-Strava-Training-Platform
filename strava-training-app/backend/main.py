@@ -777,8 +777,10 @@ async def _scan_all_gemeenten():
         )
         acts = result.scalars().all()
         logger.info("Scanning %d cycling activities for gemeenten", len(acts))
-        for act in acts:
+        for i, act in enumerate(acts):
             await svc.process_activity_gemeenten(act)
+            if (i + 1) % 50 == 0:
+                logger.info("Gemeente scan progress: %d/%d activities", i + 1, len(acts))
         logger.info("Gemeente scan complete")
 
 
