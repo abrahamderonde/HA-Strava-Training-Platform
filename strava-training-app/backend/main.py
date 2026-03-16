@@ -370,6 +370,7 @@ async def trigger_recalculate(background_tasks: BackgroundTasks):
 
 
 
+@app.get("/trainiq/analytics/pmc")
 async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
     cutoff = datetime.now() - timedelta(days=days)
     result = await db.execute(
@@ -757,7 +758,13 @@ async def scan_all_activities_for_gemeenten(
 
 
 async def _scan_all_gemeenten():
+    import os
     from .models.database import AsyncSessionLocal
+    # Delete cached boundaries so they re-download with correct URL
+    cache_path = "/data/strava_training/gemeente_boundaries.json.gz"
+    if os.path.exists(cache_path):
+        os.remove(cache_path)
+        logger.info("Cleared gemeente boundary cache")
     async with AsyncSessionLocal() as db:
         svc = GemeenteService(db)
         await svc.ensure_boundaries_loaded()
