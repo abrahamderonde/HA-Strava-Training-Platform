@@ -3,6 +3,7 @@ Main FastAPI application for Strava Training Platform.
 """
 import os
 import json
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -330,7 +331,48 @@ async def import_single_activity(activity_id: int, db: AsyncSession):
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-@app.post("/trainiq/strava/import")
+@app.post("/trainiq/strava/backfill-latlng")
+async def backfill_latlng(background_tasks: BackgroundTasks):
+    """Re-fetch latlng streams for cycling activities that are missing GPS data."""
+    async def _backfill():
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            CYCLING = ["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"]
+            result = await db.execute(
+                select(Activity)
+                .where(Activity.latlng_stream == None)
+                .where(Activity.sport_type.in_(CYCLING))
+                .order_by(Activity.start_date.desc())
+            )
+            acts = result.scalars().all()
+            logger.info("Backfilling latlng for %d cycling activities", len(acts))
+            config = load_config()
+            service = StravaService(config["strava_client_id"], config["strava_client_secret"], db)
+            token = await service._get_valid_token()
+            if not token:
+                logger.error("No valid Strava token for backfill")
+                return
+            updated = 0
+            for i, act in enumerate(acts):
+                try:
+                    streams = await service._get_activity_streams(act.strava_id, token)
+                    if "latlng" in streams:
+                        raw = streams["latlng"].get("data", [])
+                        act.latlng_stream = raw[::5] if len(raw) > 5 else raw
+                        updated += 1
+                    await asyncio.sleep(0.5)  # respect rate limits
+                except Exception as e:
+                    logger.warning("Failed to fetch latlng for %s: %s", act.strava_id, e)
+                if (i + 1) % 50 == 0:
+                    await db.commit()
+                    logger.info("Backfill progress: %d/%d, %d updated", i + 1, len(acts), updated)
+            await db.commit()
+            logger.info("Backfill complete: %d activities updated with latlng", updated)
+    background_tasks.add_task(_backfill)
+    return {"status": "Backfill started"}
+
+
+
 async def trigger_import(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
