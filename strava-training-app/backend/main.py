@@ -403,6 +403,7 @@ async def backfill_latlng(background_tasks: BackgroundTasks):
 
 
 
+@app.post("/trainiq/strava/import")
 async def trigger_import(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
