@@ -7,6 +7,8 @@
 
 ---
 
+### [Strava Training Platform](./strava-training-app)
+
 ## Features
 
 ### 📊 Training Analytics
