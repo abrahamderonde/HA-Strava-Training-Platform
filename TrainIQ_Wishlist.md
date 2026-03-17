@@ -97,6 +97,26 @@ A tool to backfill synthetic commute activities for the period before commutes w
 - FTP at time of commute can be estimated or use a fixed configurable value
 - If commutes are ever retroactively added to Strava, synthetic ones can be deleted
 
+## 5. Gemeente map upgrades
+
+**Priority:** Low
+**Status:** Pending
+
+**add filters:**
+- highlight gemeenten first crossed in year XXXX
+- highlight gemeenten passed in last ride (also plot ride)
+
+**GUI layout:**
+- Holland is vertical. So put map and overview of last crossed gemeenten side by side
+
+## 5. Eddington map upgrades
+
+**Priority:** Low
+**Status:** Pending
+
+**progress bar**
+- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc. 
+
 ---
 
 ## Implementation Notes
