@@ -129,8 +129,8 @@ class GemeenteService:
         """
         if not self._shapes or not coords:
             return []
-        # Sample points — 200 is enough with brute force over 342 shapes
-        step = max(1, len(coords) // 200)
+        # Sample points — 500 gives good coverage without being too slow
+        step = max(1, len(coords) // 500)
         sampled = coords[::step]
         hit_codes: Set[str] = set()
         for lon, lat in sampled:
