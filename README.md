@@ -16,7 +16,7 @@ See full ReadMe at
 
 🗺️ Gemeente Explorer (Netherlands)
 
-Eddington number
+📈 Eddington number
 
 🤖 AI Coaching
 
