@@ -11,9 +11,13 @@ See full ReadMe at
 
 ## Features
 📊 Training Analytics
+
 📅 Activity Management
+
 🗺️ Gemeente Explorer (Netherlands)
+
 Eddington number
+
 🤖 AI Coaching
 
 
