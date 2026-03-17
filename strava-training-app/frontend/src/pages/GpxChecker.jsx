@@ -183,91 +183,80 @@ export default function GpxChecker() {
       )}
 
       {result && (
-        <>
-          {/* Summary */}
-          <div className="stat-grid" style={{ marginBottom: 20 }}>
-            <div className="stat-tile">
-              <div className="stat-label">Total crossed</div>
-              <div className="stat-value">{result.total_crossed}</div>
-              <div className="stat-delta" style={{ color: 'var(--muted)' }}>gemeenten</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">🌟 New!</div>
-              <div className="stat-value" style={{ color: 'var(--green)' }}>{result.new_count}</div>
-              <div className="stat-delta positive">new gemeenten</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Already visited</div>
-              <div className="stat-value" style={{ color: 'var(--muted)' }}>{result.already_count}</div>
-            </div>
-            <div className="stat-tile">
-              <div className="stat-label">Track points</div>
-              <div className="stat-value">{result.point_count?.toLocaleString()}</div>
-            </div>
+        <div className="stat-grid" style={{ marginBottom: 20 }}>
+          <div className="stat-tile">
+            <div className="stat-label">Total crossed</div>
+            <div className="stat-value">{result.total_crossed}</div>
+            <div className="stat-delta" style={{ color: 'var(--muted)' }}>gemeenten</div>
           </div>
-
-          {/* Map */}
-          <div style={{
-            borderRadius: 14, overflow: 'hidden',
-            border: '1px solid var(--border)', marginBottom: 20,
-            height: 420,
-          }}>
-            <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+          <div className="stat-tile">
+            <div className="stat-label">🌟 New!</div>
+            <div className="stat-value" style={{ color: 'var(--green)' }}>{result.new_count}</div>
+            <div className="stat-delta positive">new gemeenten</div>
           </div>
-
-          {/* Gemeente lists */}
-          <div className="section-grid">
-            {result.new_count > 0 && (
-              <div className="card">
-                <div className="card-title" style={{ color: 'var(--green)' }}>
-                  🌟 New gemeenten ({result.new_count})
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {result.new_gemeenten.map(g => (
-                    <div key={g.code} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '8px 12px',
-                      background: 'rgba(34,197,94,0.08)',
-                      border: '1px solid rgba(34,197,94,0.2)',
-                      borderRadius: 7, fontSize: 13,
-                    }}>
-                      <Star size={13} style={{ color: 'var(--green)', flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600 }}>{g.name}</span>
-                      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{g.code}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {result.already_count > 0 && (
-              <div className="card">
-                <div className="card-title">Already visited ({result.already_count})</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 300, overflowY: 'auto' }}>
-                  {result.already_gemeenten.map(g => (
-                    <div key={g.code} style={{
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      padding: '7px 12px',
-                      background: 'var(--surface2)',
-                      borderRadius: 7, fontSize: 13,
-                    }}>
-                      <CheckCircle size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <span>{g.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="stat-tile">
+            <div className="stat-label">Already visited</div>
+            <div className="stat-value" style={{ color: 'var(--muted)' }}>{result.already_count}</div>
           </div>
-        </>
+          <div className="stat-tile">
+            <div className="stat-label">Track points</div>
+            <div className="stat-value">{result.point_count?.toLocaleString()}</div>
+          </div>
+        </div>
       )}
 
-      {!result && !loading && (
-        <div style={{
-          borderRadius: 14, overflow: 'hidden',
-          border: '1px solid var(--border)', height: 380,
-        }}>
-          <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+      {/* Map — always in DOM so Leaflet doesn't lose its container */}
+      <div style={{
+        borderRadius: 14, overflow: 'hidden',
+        border: '1px solid var(--border)', marginBottom: 20,
+        height: 420,
+      }}>
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+      </div>
+
+      {result && (
+        <div className="section-grid">
+          {result.new_count > 0 && (
+            <div className="card">
+              <div className="card-title" style={{ color: 'var(--green)' }}>
+                🌟 New gemeenten ({result.new_count})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {result.new_gemeenten.map(g => (
+                  <div key={g.code} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 12px',
+                    background: 'rgba(34,197,94,0.08)',
+                    border: '1px solid rgba(34,197,94,0.2)',
+                    borderRadius: 7, fontSize: 13,
+                  }}>
+                    <Star size={13} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600 }}>{g.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{g.code}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result.already_count > 0 && (
+            <div className="card">
+              <div className="card-title">Already visited ({result.already_count})</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 300, overflowY: 'auto' }}>
+                {result.already_gemeenten.map(g => (
+                  <div key={g.code} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 12px',
+                    background: 'var(--surface2)',
+                    borderRadius: 7, fontSize: 13,
+                  }}>
+                    <CheckCircle size={13} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span>{g.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
