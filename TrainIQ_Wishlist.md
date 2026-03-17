@@ -115,7 +115,10 @@ A tool to backfill synthetic commute activities for the period before commutes w
 **Status:** Pending
 
 **progress bar**
-- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc. 
+- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
+
+**line n=n**
+- Show line where n_days = n_km. So you see the gap between the bars and the required line. 
 
 ---
 
