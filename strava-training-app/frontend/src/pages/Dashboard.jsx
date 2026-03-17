@@ -26,17 +26,19 @@ export default function Dashboard() {
   const [importStatus, setImportStatus] = useState(null)
   const [importing, setImporting] = useState(false)
 
-  useEffect(() => {
+  const loadData = () => {
     Promise.all([
-      fetch('/trainiq/analytics/pmc?days=30').then(r => r.json()),
-      fetch('/trainiq/analytics/ftp').then(r => r.json()),
-      fetch('/trainiq/activities?per_page=5').then(r => r.json()),
+      fetch('/trainiq/analytics/pmc?days=30').then(r => r.json()).catch(() => []),
+      fetch('/trainiq/analytics/ftp').then(r => r.json()).catch(() => ({})),
+      fetch('/trainiq/activities?per_page=5').then(r => r.json()).catch(() => []),
     ]).then(([pmcData, ftpData, actData]) => {
-      setPmc(pmcData)
+      setPmc(Array.isArray(pmcData) ? pmcData : [])
       setFtp(ftpData)
-      setActivities(actData)
+      setActivities(Array.isArray(actData) ? actData : [])
     })
-  }, [])
+  }
+
+  useEffect(() => { loadData() }, [])
 
   const latest = pmc[pmc.length - 1]
   const tsbClass = latest
@@ -47,14 +49,28 @@ export default function Dashboard() {
     setImporting(true)
     setImportStatus('Importing…')
     await fetch('/trainiq/strava/import', { method: 'POST' })
-    setImportStatus('Import started — this may take a few minutes')
+    setImportStatus('Import running — auto-refreshing every 30s…')
     setImporting(false)
+    // Poll every 30s for up to 10 minutes
+    let count = 0
+    const interval = setInterval(() => {
+      loadData()
+      count++
+      if (count >= 20) {
+        clearInterval(interval)
+        setImportStatus('Done — data refreshed')
+      }
+    }, 30000)
   }
 
   const triggerRecalculate = async () => {
     setImportStatus('Recalculating…')
     await fetch('/trainiq/analytics/recalculate', { method: 'POST' })
-    setImportStatus('Recalculation started — refresh in a moment')
+    // Recalculation takes ~5 seconds, refresh after 8s
+    setTimeout(() => {
+      loadData()
+      setImportStatus('Recalculation done — data refreshed')
+    }, 8000)
   }
 
   return (
