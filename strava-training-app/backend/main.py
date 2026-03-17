@@ -331,7 +331,29 @@ async def import_single_activity(activity_id: int, db: AsyncSession):
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-@app.post("/trainiq/strava/backfill-latlng")
+@app.get("/trainiq/debug/latlng-stats")
+async def latlng_stats(db: AsyncSession = Depends(get_db)):
+    """Debug: check how many cycling activities have latlng data."""
+    from sqlalchemy import func, case
+    CYCLING = ["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"]
+    result = await db.execute(
+        select(Activity).where(Activity.sport_type.in_(CYCLING))
+    )
+    acts = result.scalars().all()
+    null_count = sum(1 for a in acts if a.latlng_stream is None)
+    empty_count = sum(1 for a in acts if a.latlng_stream is not None and len(a.latlng_stream) == 0)
+    has_data = sum(1 for a in acts if a.latlng_stream and len(a.latlng_stream) > 0)
+    sample = next((a for a in acts if a.latlng_stream and len(a.latlng_stream) > 0), None)
+    return {
+        "total_cycling": len(acts),
+        "latlng_null": null_count,
+        "latlng_empty_list": empty_count,
+        "latlng_has_data": has_data,
+        "sample_first_point": sample.latlng_stream[0] if sample else None,
+    }
+
+
+
 async def backfill_latlng(background_tasks: BackgroundTasks):
     """Re-fetch latlng streams for cycling activities that are missing GPS data."""
     async def _backfill():
@@ -345,7 +367,15 @@ async def backfill_latlng(background_tasks: BackgroundTasks):
                 .order_by(Activity.start_date.desc())
             )
             acts = result.scalars().all()
-            logger.info("Backfilling latlng for %d cycling activities", len(acts))
+            logger.info("Backfilling latlng for %d cycling activities without GPS", len(acts))
+
+            # Also log total cycling activities for comparison
+            total_result = await db.execute(
+                select(func.count(Activity.id))
+                .where(Activity.sport_type.in_(CYCLING))
+            )
+            total = total_result.scalar()
+            logger.info("Total cycling activities in DB: %d", total)
             config = load_config()
             service = StravaService(config["strava_client_id"], config["strava_client_secret"], db)
             token = await service._get_valid_token()
