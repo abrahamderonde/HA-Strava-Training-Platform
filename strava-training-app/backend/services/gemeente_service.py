@@ -129,22 +129,35 @@ class GemeenteService:
         """
         if not self._shapes or not coords:
             return []
-        # Sample points — 500 gives good coverage without being too slow
-        # who cares about being slow. Just changed it to 50
-        step = max(1, len(coords) // 50)
+
+        # Pre-filter shapes using track bounding box
+        lons = [c[0] for c in coords]
+        lats = [c[1] for c in coords]
+        min_lon, max_lon = min(lons), max(lons)
+        min_lat, max_lat = min(lats), max(lats)
+        candidates = [
+            gem for gem in self._shapes
+            if (gem["shape"].bounds[2] >= min_lon and gem["shape"].bounds[0] <= max_lon
+                and gem["shape"].bounds[3] >= min_lat and gem["shape"].bounds[1] <= max_lat)
+        ]
+
+        if not candidates:
+            return []
+
+        # 2000 sample points — catches even brief gemeente clips
+        step = max(1, len(coords) // 2000)
         sampled = coords[::step]
+
         hit_codes: Set[str] = set()
         for lon, lat in sampled:
             pt = Point(lon, lat)
-            for gem in self._shapes:
+            for gem in candidates:
                 if gem["code"] not in hit_codes and gem["shape"].contains(pt):
                     hit_codes.add(gem["code"])
-                    if len(hit_codes) == len(self._shapes):
-                        break  # found all, stop early
+
         return [{"code": g["code"], "name": g["name"]}
                 for g in self._shapes if g["code"] in hit_codes]
-        return [{"code": g["code"], "name": g["name"]}
-                for g in self._shapes if g["code"] in hit_codes]
+
 
     # ------------------------------------------------------------------ #
     #  GPX parsing                                                         #
