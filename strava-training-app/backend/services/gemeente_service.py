@@ -120,39 +120,28 @@ class GemeenteService:
     # ------------------------------------------------------------------ #
 
     def _build_index(self):
-        """Build a spatial index over gemeente shapes for fast lookup."""
-        from shapely.strtree import STRtree
-        self._geoms = [g["shape"] for g in self._shapes]
-        self._index = STRtree(self._geoms)
+        pass  # no longer needed
 
     def find_gemeenten_for_track(self, coords: List[Tuple[float, float]]) -> List[Dict]:
         """
-        coords: list of (lon, lat)
+        coords: list of (lon, lat) in WGS84
         Returns list of {code, name} for all crossed gemeenten.
-        Uses STRtree spatial index for fast point-in-polygon.
         """
         if not self._shapes or not coords:
             return []
-        if not hasattr(self, '_index') or self._index is None:
-            self._build_index()
-            # One-time diagnostic
-            if self._shapes and coords:
-                b = self._shapes[0]["shape"].bounds
-                logger.info("DIAG shape[0] '%s' bounds: %.3f,%.3f -> %.3f,%.3f",
-                            self._shapes[0]["name"], b[0], b[1], b[2], b[3])
-                logger.info("DIAG first coord (lon,lat): %.4f, %.4f", coords[0][0], coords[0][1])
-        step = max(1, len(coords) // 500)
+        # Sample points — 200 is enough with brute force over 342 shapes
+        step = max(1, len(coords) // 200)
         sampled = coords[::step]
         hit_codes: Set[str] = set()
         for lon, lat in sampled:
             pt = Point(lon, lat)
-            # In Shapely 2.x STRtree.query() returns array of integer indices
-            candidate_indices = self._index.query(pt)
-            for idx in candidate_indices:
-                idx = int(idx)  # ensure it's a plain int, not numpy int
-                gem = self._shapes[idx]
+            for gem in self._shapes:
                 if gem["code"] not in hit_codes and gem["shape"].contains(pt):
                     hit_codes.add(gem["code"])
+                    if len(hit_codes) == len(self._shapes):
+                        break  # found all, stop early
+        return [{"code": g["code"], "name": g["name"]}
+                for g in self._shapes if g["code"] in hit_codes]
         return [{"code": g["code"], "name": g["name"]}
                 for g in self._shapes if g["code"] in hit_codes]
 
@@ -240,6 +229,8 @@ class GemeenteService:
     def _extract_coords(self, activity: Activity) -> List[Tuple[float, float]]:
         if not activity.latlng_stream:
             return []
+        # latlng_stream stores [lat, lon] pairs (Strava format)
+        # Shapely needs (lon, lat) so we swap
         return [(pt[1], pt[0]) for pt in activity.latlng_stream if len(pt) == 2]
 
     # ------------------------------------------------------------------ #
