@@ -4,9 +4,25 @@
 
 ---
 
-## 1. Distance Progress Graphs
+## 1. Workout planning improvements
 
 **Priority:** High
+**Status:** Pending
+
+More detailed user input for workout planning so that the workouts actually fit in busy life
+
+**Requirements:**
+- input for available time. Maybe slider with 15min increments.
+- toggle for indoor workout or not. Indoor workouts may be a bit more complex or entertaining. Also the endurance rides are most likely shifted to the outdoor rides. 
+- Additional input field for commutes. No workouts to be generated here, but info is needed to balance intensity etc.
+    - including time (TSS to be estimated)
+    - time to be copied to future commutes
+
+---
+
+## 2. Distance Progress Graphs
+
+**Priority:** Medium
 **Status:** Pending
 
 Multi-year distance comparison charts showing how weekly or monthly distance evolves over the calendar year.
@@ -24,9 +40,9 @@ Multi-year distance comparison charts showing how weekly or monthly distance evo
 
 ---
 
-## 2. Fitness Progress Graph (Year-over-Year CTL)
+## 3. Fitness Progress Graph (Year-over-Year CTL)
 
-**Priority:** High
+**Priority:** Medium
 **Status:** Pending
 
 Chart comparing CTL (fitness) across calendar years, so you can see whether this year's fitness is ahead of or behind last year.
@@ -43,9 +59,9 @@ Chart comparing CTL (fitness) across calendar years, so you can see whether this
 
 ---
 
-## 3. Equipment / Gear Tracking
+## 4. Equipment / Gear Tracking
 
-**Priority:** Medium
+**Priority:** Low
 **Status:** Pending
 
 Track bikes and components, log distance/hours per item, get alerts when service intervals are due.
@@ -70,7 +86,7 @@ Track bikes and components, log distance/hours per item, get alerts when service
 
 ---
 
-## 4. Historical Commute Generator
+## 5. Historical Commute Generator
 
 **Priority:** Medium
 **Status:** Pending
@@ -97,7 +113,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 - FTP at time of commute can be estimated or use a fixed configurable value
 - If commutes are ever retroactively added to Strava, synthetic ones can be deleted
 
-## 5. Gemeente map upgrades
+## 6. Gemeente map upgrades
 
 **Priority:** Low
 **Status:** Pending
@@ -112,7 +128,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 **rebranding:**
 - naming to be changed to 'Long term NL challenge', according to the original idea by Frank van Moorsel. 
 
-## 5. Eddington map upgrades
+## 7. Eddington map upgrades
 
 **Priority:** Low
 **Status:** Pending
