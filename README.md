@@ -14,7 +14,7 @@ See full ReadMe at
 
 📅 Activity Management
 
-🗺️ Gemeente Explorer (Netherlands)
+🗺️ Long term NL challenge (idea of Frank van Moorsel)
 
 📈 Eddington number
 
