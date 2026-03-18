@@ -109,6 +109,9 @@ A tool to backfill synthetic commute activities for the period before commutes w
 **GUI layout:**
 - Holland is vertical. So put map and overview of last crossed gemeenten side by side
 
+**rebranding:**
+- naming to be changed to 'Long term NL challenge', according to the original idea by Frank van Moorsel. 
+
 ## 5. Eddington map upgrades
 
 **Priority:** Low
