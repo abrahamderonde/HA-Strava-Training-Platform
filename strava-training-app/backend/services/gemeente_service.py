@@ -145,7 +145,9 @@ class GemeenteService:
             return []
 
         # 2000 sample points — catches even brief gemeente clips
-        step = max(1, len(coords) // 2000)
+        # step = max(1, len(coords) // 2000)
+        # removed fixed sample points. Longer ride needs more points. So better to have fixed step size. 30km/h is 8.3m/s. Sampling of 1/s and step = 10 gives 83m accuracy. 
+        step = 10
         sampled = coords[::step]
 
         hit_codes: Set[str] = set()
