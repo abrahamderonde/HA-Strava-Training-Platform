@@ -18,7 +18,7 @@ See full ReadMe at
 
 📈 Eddington number
 
-🤖 AI Coaching
+🤖 AI Workout generation
 
 
 ---
