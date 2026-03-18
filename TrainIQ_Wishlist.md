@@ -113,6 +113,8 @@ A tool to backfill synthetic commute activities for the period before commutes w
 - FTP at time of commute can be estimated or use a fixed configurable value
 - If commutes are ever retroactively added to Strava, synthetic ones can be deleted
 
+---
+
 ## 6. Gemeente map upgrades
 
 **Priority:** Low
@@ -128,6 +130,8 @@ A tool to backfill synthetic commute activities for the period before commutes w
 **rebranding:**
 - naming to be changed to 'Long term NL challenge', according to the original idea by Frank van Moorsel. 
 
+---
+
 ## 7. Eddington map upgrades
 
 **Priority:** Low
@@ -139,6 +143,17 @@ A tool to backfill synthetic commute activities for the period before commutes w
 **line n=n**
 - Show line where n_days = n_km. So you see the gap between the bars and the required line. 
 
+---
+
+## 8. Gui improvements for mobile
+
+**Priority:** Medium
+**Status:** Pending
+
+**GUI improvements for mobile**
+- On mobile the pages don't show up very nicely.
+- Maybe the side bar can collapse or so
+  
 ---
 
 ## Implementation Notes
