@@ -122,9 +122,14 @@ class GemeenteService:
     def _build_index(self):
         pass  # no longer needed
 
-    def find_gemeenten_for_track(self, coords: List[Tuple[float, float]]) -> List[Dict]:
+    def find_gemeenten_for_track(
+        self,
+        coords: List[Tuple[float, float]],
+        exclude_codes: Optional[Set[str]] = None,
+    ) -> List[Dict]:
         """
         coords: list of (lon, lat) in WGS84
+        exclude_codes: set of gemeente codes to skip (e.g. already visited)
         Returns list of {code, name} for all crossed gemeenten.
         """
         if not self._shapes or not coords:
@@ -137,16 +142,15 @@ class GemeenteService:
         min_lat, max_lat = min(lats), max(lats)
         candidates = [
             gem for gem in self._shapes
-            if (gem["shape"].bounds[2] >= min_lon and gem["shape"].bounds[0] <= max_lon
-                and gem["shape"].bounds[3] >= min_lat and gem["shape"].bounds[1] <= max_lat)
+            if (gem["code"] not in (exclude_codes or set()))
+            and (gem["shape"].bounds[2] >= min_lon and gem["shape"].bounds[0] <= max_lon
+                 and gem["shape"].bounds[3] >= min_lat and gem["shape"].bounds[1] <= max_lat)
         ]
 
         if not candidates:
             return []
 
-        # 2000 sample points — catches even brief gemeente clips
-        # step = max(1, len(coords) // 2000)
-        # removed fixed sample points. Longer ride needs more points. So better to have fixed step size. 30km/h is 8.3m/s. Sampling of 1/s and step = 10 gives 83m accuracy. 
+        # Fixed step of 10 — Strava samples at ~1s, step=10 gives ~83m accuracy at 30km/h
         step = 10
         sampled = coords[::step]
 
@@ -224,21 +228,21 @@ class GemeenteService:
         if not coords:
             return []
         await self.ensure_boundaries_loaded()
-        gemeenten = self.find_gemeenten_for_track(coords)
+
+        # Fetch already-visited codes — no point checking them again
+        result = await self.db.execute(
+            select(VisitedGemeente.gemeente_code).distinct()
+        )
+        already_visited = {row[0] for row in result.all()}
+
+        gemeenten = self.find_gemeenten_for_track(coords, exclude_codes=already_visited)
         for gem in gemeenten:
-            result = await self.db.execute(
-                select(VisitedGemeente).where(
-                    VisitedGemeente.gemeente_code == gem["code"],
-                    VisitedGemeente.activity_id == activity.id,
-                )
-            )
-            if not result.scalar_one_or_none():
-                self.db.add(VisitedGemeente(
-                    gemeente_code=gem["code"],
-                    gemeente_name=gem["name"],
-                    activity_id=activity.id,
-                    first_visit_date=activity.start_date,
-                ))
+            self.db.add(VisitedGemeente(
+                gemeente_code=gem["code"],
+                gemeente_name=gem["name"],
+                activity_id=activity.id,
+                first_visit_date=activity.start_date,
+            ))
         await self.db.commit()
         return [g["code"] for g in gemeenten]
 
