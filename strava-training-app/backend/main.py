@@ -331,7 +331,33 @@ async def import_single_activity(activity_id: int, db: AsyncSession):
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-@app.get("/trainiq/debug/latlng-stats")
+@app.get("/trainiq/debug/tss-stats")
+async def tss_stats(db: AsyncSession = Depends(get_db)):
+    """Debug: show TSS distribution to diagnose CTL discrepancy."""
+    from sqlalchemy import func
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.start_date >= datetime.now() - timedelta(days=90))
+        .order_by(Activity.start_date.desc())
+    )
+    acts = result.scalars().all()
+    rows = []
+    for a in acts:
+        rows.append({
+            "date": a.start_date.date().isoformat(),
+            "name": a.name,
+            "sport": a.sport_type,
+            "duration_min": round((a.moving_time or 0) / 60),
+            "tss": round(a.tss or 0, 1),
+            "has_power": a.has_power,
+            "commute": a.commute,
+        })
+    total_tss_90d = sum(r["tss"] for r in rows)
+    avg_daily_tss = round(total_tss_90d / 90, 1)
+    return {"avg_daily_tss_90d": avg_daily_tss, "activities": rows}
+
+
+
 async def latlng_stats(db: AsyncSession = Depends(get_db)):
     """Debug: check how many cycling activities have latlng data."""
     from sqlalchemy import func, case
