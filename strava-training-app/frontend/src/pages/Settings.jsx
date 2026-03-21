@@ -162,8 +162,22 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Backfill GPS */}
+      {/* Recalculate TSS */}
       <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-title">Recalculate Historical TSS</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
+          <p>If your initial FTP was set too low, all historical power-based TSS values will be inflated, causing CTL to be too high.</p>
+          <p style={{ marginTop: 8 }}>This recalculates TSS for all power activities using the current estimated FTP, then rebuilds the PMC. Run this once after your FTP has been correctly estimated.</p>
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={async () => {
+          await fetch('/trainiq/strava/recalculate-tss', { method: 'POST' })
+          alert('TSS recalculation started — this may take a minute. PMC will rebuild automatically when done.')
+        }}>
+          Recalculate TSS + Rebuild PMC
+        </button>
+      </div>
+
+
         <div className="card-title">Backfill Missing GPS Data</div>
         <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
           <p>Re-fetches GPS tracks for older cycling activities that were imported without location data. Required for complete Gemeente detection.</p>
