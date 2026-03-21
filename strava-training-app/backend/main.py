@@ -331,7 +331,37 @@ async def import_single_activity(activity_id: int, db: AsyncSession):
 
 # ─── Import ──────────────────────────────────────────────────────────────────
 
-@app.get("/trainiq/debug/tss-stats")
+@app.post("/trainiq/strava/recalculate-tss")
+async def recalculate_all_tss(background_tasks: BackgroundTasks):
+    """Recalculate TSS for all activities using the current FTP estimate."""
+    async def _recalc_tss():
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            logger.info("Recalculating TSS for all activities using FTP=%.1f", ftp)
+            result = await db.execute(select(Activity).where(Activity.has_power == True))
+            acts = result.scalars().all()
+            updated = 0
+            for act in acts:
+                if not act.power_stream:
+                    continue
+                tss, np_val, if_ = calculate_tss_from_power(
+                    act.power_stream, ftp, act.moving_time or 0
+                )
+                act.tss = tss
+                act.np = np_val
+                act.if_ = if_
+                updated += 1
+            await db.commit()
+            logger.info("TSS recalculated for %d activities", updated)
+            # Rebuild PMC with corrected TSS
+            await recalculate_pmc(db)
+            logger.info("PMC rebuilt after TSS recalculation")
+    background_tasks.add_task(_recalc_tss)
+    return {"status": "TSS recalculation started", "note": "PMC will rebuild automatically when done"}
+
+
+
 async def tss_stats(db: AsyncSession = Depends(get_db)):
     """Debug: show TSS distribution to diagnose CTL discrepancy."""
     from sqlalchemy import func
