@@ -177,8 +177,8 @@ export default function Settings() {
         </button>
       </div>
 
-
-        <div className="card-title">Backfill Missing GPS Data</div>
+      {/* Backfill GPS */}
+      <div className="card" style={{ marginTop: 24 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
           <p>Re-fetches GPS tracks for older cycling activities that were imported without location data. Required for complete Gemeente detection.</p>
           <p style={{ marginTop: 8 }}>This may take a while for large histories — progress shows in the app log.</p>
