@@ -336,6 +336,7 @@ async def recalculate_all_tss(background_tasks: BackgroundTasks):
     """Recalculate TSS for all activities using the current FTP estimate."""
     async def _recalc_tss():
         from .models.database import AsyncSessionLocal
+        from .services.training_science import calculate_tss_from_power
         async with AsyncSessionLocal() as db:
             ftp = await get_current_ftp(db)
             logger.info("Recalculating TSS for all activities using FTP=%.1f", ftp)
