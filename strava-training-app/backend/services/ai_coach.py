@@ -84,6 +84,12 @@ class AICoachService:
         day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         available_day_names = [day_names[d] for d in available_days]
 
+        # Compute explicit date for each available day so AI doesn't have to calculate
+        available_day_dates = []
+        for d in sorted(available_days):
+            day_date = week_start + timedelta(days=d)
+            available_day_dates.append(f"{day_names[d]} {day_date.strftime('%Y-%m-%d')}")
+
         prompt = f"""You are an expert cycling coach creating a structured training plan.
 
 ## Athlete Profile
@@ -105,13 +111,12 @@ class AICoachService:
 ## Recent Training (last 2 weeks)
 {chr(10).join(recent_summary) if recent_summary else "No recent activities"}
 
-## Week to Plan
-- Week starting: {week_start_str}
-- Available training days: {", ".join(available_day_names)}
+## Available Training Days (use EXACTLY these dates)
+{chr(10).join(f"- {d}" for d in available_day_dates)}
 
 ## Instructions
-Create a weekly training plan for the week starting {week_start_str}.
-- Only schedule workouts on the available training days listed above
+Create a weekly training plan using ONLY the dates listed above.
+- Use the exact dates provided — do not use any other dates
 - Balance stress and recovery based on current TSB ({current_tsb:.1f})
 - TSB < -20: reduce intensity, TSB > +20: can push harder  
 - Progress toward the event ({days_to_event} days away)
