@@ -1,6 +1,6 @@
 # TrainIQ — Enhancement Wishlist
 
-*To be implemented after testing. Items added in order of discussion.*
+*To be implemented after testing. *
 
 ---
 
@@ -152,7 +152,17 @@ A tool to backfill synthetic commute activities for the period before commutes w
 
 ---
 
-## 8. Gui improvements for mobile
+## 8. PMC upgrades
+
+**Priority:** Low
+**Status:** Pending
+
+**Show planning / future**
+- show future PMC curve based on detailed and global workout planning
+
+---
+
+## 9. Gui improvements for mobile
 
 **Priority:** Medium
 **Status:** Pending
