@@ -18,6 +18,9 @@ More detailed user input for workout planning so that the workouts actually fit 
     - including time (TSS to be estimated)
     - time to be copied to future commutes
 
+**Notes:**
+- Compare features with join.cc and joinvetka.com
+
 ---
 
 ## 2. Distance Progress Graphs
