@@ -12,6 +12,10 @@
 More detailed user input for workout planning so that the workouts actually fit in busy life
 
 **Requirements:**
+- Create 'global' workout planning from goal.
+    - This would need a indication of how many hours per week.
+    - Result would be hours per week / TSS per week. Short description of type of workouts to be expected.
+- Global workout planning, together with goal, should be input for detailed workout planning. Global planning is only a loose indication. If the user has deviated from this plan in the last few weeks, the detailed planning should adapt.  
 - input for available time. Maybe slider with 15min increments.
 - toggle for indoor workout or not. Indoor workouts may be a bit more complex or entertaining. Also the endurance rides are most likely shifted to the outdoor rides. 
 - Additional input field for commutes. No workouts to be generated here, but info is needed to balance intensity etc.
