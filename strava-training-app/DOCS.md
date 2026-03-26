@@ -136,65 +136,35 @@ FTP auto-estimation requires at least 6 power data points across different durat
 **Gemeente map is empty**  
 GPS tracks need to be stored during import. If you imported activities before the latlng stream was being fetched, go to **Settings** and trigger a re-import, or run the re-scan manually.
 
-## Training Science
-
-### TSS (Training Stress Score)
-
-| Data available | Method |
-|---|---|
-| Power meter | TSS = (t × NP × IF) / FTP × 100 |
-| Heart rate only | HR-TSS via %HRR at LTHR |
-| Neither (commutes) | Estimated by sport type × duration |
-
-### PMC Time Constants (Banister model)
-- **CTL** (Chronic Training Load / Fitness): τ = 42 days
-- **ATL** (Acute Training Load / Fatigue): τ = 7 days  
-- **TSB** (Training Stress Balance / Form): CTL − ATL (prior day)
-
-### 3-Parameter Critical Power Model
-
-Morton RH (1996). A 3-parameter critical power model. *Ergonomics, 39*(4), 611-619.
-
-```
-P(t) = W'/t + CP + (Pmax − CP) × e^(−t/τ)
-```
-
-- **CP** = Critical Power = **FTP**
-- **W'** = Anaerobic work capacity (joules)
-- **Pmax** = Maximal sprint power
-- Fitted to best mean maximal power values from 2–1200 second durations
-- Auto-refitted nightly from last 60 days of power data
-
-### Power Zones (Coggan)
-
-| Zone | Name | % FTP |
-|---|---|---|
-| 1 | Active Recovery | < 55% |
-| 2 | Endurance | 56–75% |
-| 3 | Tempo | 76–90% |
-| 4 | Threshold | 91–105% |
-| 5 | VO2 Max | 106–120% |
-| 6 | Anaerobic | 121–150% |
-| 7 | Neuromuscular | > 150% |
-
-
 ---
 
-## Development
+## Garmin Token Setup (if automatic login fails)
 
-To run locally without Home Assistant:
+Garmin rate-limits SSO login attempts (429 error). If you see this, generate tokens manually on your PC instead:
+
+**On your PC (Windows/Mac/Linux):**
 
 ```bash
-# Backend
-cd strava-training-addon
-pip install -r backend/requirements.txt
-export STRAVA_CLIENT_ID=xxx
-export STRAVA_CLIENT_SECRET=xxx
-export ANTHROPIC_API_KEY=xxx
-python -m uvicorn backend.main:app --reload --port 8080
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev  # proxies /api to port 8080
+pip install garth garminconnect
+python3 -c "
+from garminconnect import Garmin
+import os
+client = Garmin(email='your@email.com', password='yourpassword')
+client.login()
+os.makedirs('garmin_tokens', exist_ok=True)
+client.garth.dump('garmin_tokens')
+print('Tokens saved to garmin_tokens/ folder')
+"
 ```
+
+This creates two files in a `garmin_tokens/` folder:
+- `oauth1_token.json`
+- `oauth2_token.json`
+
+**Copy them to HA** using the File Editor add-on or SSH:
+```
+/data/strava_training/garmin_tokens/oauth1_token.json
+/data/strava_training/garmin_tokens/oauth2_token.json
+```
+
+After copying, try the Garmin export again — it will load the tokens without logging in. Tokens are valid for approximately one year.
