@@ -17,6 +17,7 @@ More detailed user input for workout planning so that the workouts actually fit 
     - Result would be hours per week / TSS per week. Short description of type of workouts to be expected.
 - Global workout planning, together with goal, should be input for detailed workout planning. Global planning is only a loose indication. If the user has deviated from this plan in the last few weeks, the detailed planning should adapt.  
 - input for available time. Maybe slider with 15min increments.
+- improve workout query to API. add more fun. 
 - toggle for indoor workout or not. Indoor workouts may be a bit more complex or entertaining. Also the endurance rides are most likely shifted to the outdoor rides. 
 - Additional input field for commutes. No workouts to be generated here, but info is needed to balance intensity etc.
     - including time (TSS to be estimated)
@@ -24,6 +25,11 @@ More detailed user input for workout planning so that the workouts actually fit 
 
 **Notes:**
 - Compare features with join.cc and joinvetka.com
+- API Query could look something like:
+    - Never use the pattern: warm-up → long steady block → cool-down.
+    - Every ride must include at least 2 playful or race-inspired elements.
+    - Every workout must include micro-variability: surges, terrain cues, cadence changes.
+    - Each session must feel like it could come from a real road racer’s training diary.
 
 ---
 
