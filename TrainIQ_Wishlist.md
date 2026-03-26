@@ -173,6 +173,12 @@ A tool to backfill synthetic commute activities for the period before commutes w
   
 ---
 
+## Other (not so concrete) ideas
+
+- Power plan generation (inspired on best bike split)
+
+---
+
 ## Implementation Notes
 
 - All items above depend on a stable, tested v1 of the core app
@@ -184,7 +190,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 
 ## Structural / Naming Conventions (apply on next rebuild)
 
-- Use **"app"** everywhere instead of "add-on" — this is the current Home Assistant terminology
+- Use **"app"** everywhere instead of "add-on" — this is the current Home Assistant terminology - ✓ Done?
 - Main folder name: **`strava-training-app`** (was `strava-training-addon`)
 - `config.yaml` slug: **`strava-training-app`** (was `strava_training`)
 - Update all in-code comments, README, and log messages accordingly
