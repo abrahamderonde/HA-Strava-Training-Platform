@@ -24,34 +24,40 @@ class GarminService:
         """Authenticate with Garmin Connect, using cached tokens if available."""
         try:
             from garminconnect import Garmin
-            import garth
 
             GARMIN_TOKEN_PATH.mkdir(parents=True, exist_ok=True)
 
-            client = Garmin()
-
-            # Try cached tokens first
-            token_file = GARMIN_TOKEN_PATH / "garth_tokens"
+            # Try cached tokens first — avoids SSO entirely
+            token_file = GARMIN_TOKEN_PATH / "oauth2_token.json"
             if token_file.exists():
                 try:
+                    client = Garmin()
                     client.garth.load(str(GARMIN_TOKEN_PATH))
-                    client.display_name  # trigger a real call to verify session
+                    client.get_user_summary(datetime.today().strftime("%Y-%m-%d"))
                     self._client = client
-                    logger.info("Resumed cached Garmin session")
+                    logger.info("Resumed cached Garmin session from %s", GARMIN_TOKEN_PATH)
                     return True
                 except Exception as e:
-                    logger.info("Cached tokens invalid (%s), logging in fresh", e)
+                    logger.info("Cached tokens invalid (%s), will try fresh login", e)
 
-            # Fresh login
+            # Fresh SSO login — may hit rate limits if tried too often
+            logger.info("Attempting fresh Garmin login (may fail if rate-limited)")
             client = Garmin(email=self.email, password=self.password)
             client.login()
             client.garth.dump(str(GARMIN_TOKEN_PATH))
             self._client = client
-            logger.info("Logged in to Garmin Connect and cached tokens (valid ~1 year)")
+            logger.info("Logged in to Garmin, tokens saved to %s (valid ~1 year)", GARMIN_TOKEN_PATH)
             return True
 
         except Exception as e:
-            logger.error("Garmin Connect login failed: %s", e)
+            if "429" in str(e):
+                logger.error(
+                    "Garmin login rate-limited (429). Wait 24-48 hours, or manually "
+                    "generate tokens on your PC and copy to %s. "
+                    "See DOCS.md for instructions.", GARMIN_TOKEN_PATH
+                )
+            else:
+                logger.error("Garmin Connect login failed: %s", e)
             return False
 
     async def export_workout(self, workout) -> Optional[str]:
