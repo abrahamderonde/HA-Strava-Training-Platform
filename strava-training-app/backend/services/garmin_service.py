@@ -1,15 +1,17 @@
 """
-Garmin Connect integration using garth (unofficial API).
+Garmin Connect integration using garminconnect + garth.
 Exports structured workouts to Garmin Connect.
+Tokens are cached to disk — valid for ~1 year, no repeated logins.
 """
-import garth
 import logging
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Any
-from ..models.database import PlannedWorkout
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+GARMIN_TOKEN_PATH = Path("/data/strava_training/garmin_tokens")
 
 
 class GarminService:
@@ -19,28 +21,85 @@ class GarminService:
         self._client = None
 
     async def connect(self) -> bool:
-        """Authenticate with Garmin Connect."""
+        """Authenticate with Garmin Connect, using cached tokens if available."""
         try:
-            garth.login(self.email, self.password)
-            self._client = garth
-            logger.info("Connected to Garmin Connect")
+            from garminconnect import Garmin
+            import garth
+
+            GARMIN_TOKEN_PATH.mkdir(parents=True, exist_ok=True)
+
+            client = Garmin()
+
+            # Try cached tokens first
+            token_file = GARMIN_TOKEN_PATH / "garth_tokens"
+            if token_file.exists():
+                try:
+                    client.garth.load(str(GARMIN_TOKEN_PATH))
+                    client.display_name  # trigger a real call to verify session
+                    self._client = client
+                    logger.info("Resumed cached Garmin session")
+                    return True
+                except Exception as e:
+                    logger.info("Cached tokens invalid (%s), logging in fresh", e)
+
+            # Fresh login
+            client = Garmin(email=self.email, password=self.password)
+            client.login()
+            client.garth.dump(str(GARMIN_TOKEN_PATH))
+            self._client = client
+            logger.info("Logged in to Garmin Connect and cached tokens (valid ~1 year)")
             return True
+
         except Exception as e:
             logger.error("Garmin Connect login failed: %s", e)
             return False
 
-    def _build_garmin_workout(self, workout: PlannedWorkout) -> Dict:
-        """
-        Convert a PlannedWorkout to Garmin Connect workout format.
-        Supports structured interval workouts.
-        """
+    async def export_workout(self, workout) -> Optional[str]:
+        """Export a workout to Garmin Connect. Returns the Garmin workout ID."""
+        if not self._client:
+            if not await self.connect():
+                return None
+
+        garmin_workout = self._build_garmin_workout(workout)
+
+        try:
+            response = self._client.garth.connectapi(
+                "/workout-service/workout",
+                method="POST",
+                json=garmin_workout,
+            )
+            workout_id = response.get("workoutId")
+            logger.info("Exported workout '%s' to Garmin (ID: %s)", workout.title, workout_id)
+            return str(workout_id)
+        except Exception as e:
+            logger.error("Failed to export workout to Garmin: %s", e)
+            # Clear tokens so next attempt tries fresh login
+            import shutil
+            shutil.rmtree(str(GARMIN_TOKEN_PATH), ignore_errors=True)
+            return None
+
+    async def schedule_workout(self, garmin_workout_id: str, date: datetime) -> bool:
+        """Schedule a workout on a specific date in Garmin Connect."""
+        if not self._client:
+            if not await self.connect():
+                return False
+        try:
+            self._client.garth.connectapi(
+                f"/workout-service/schedule/{garmin_workout_id}",
+                method="POST",
+                json={"date": date.strftime("%Y-%m-%d")},
+            )
+            return True
+        except Exception as e:
+            logger.error("Failed to schedule workout: %s", e)
+            return False
+
+    def _build_garmin_workout(self, workout) -> Dict:
         steps = []
         step_order = 1
-
         intervals = workout.intervals or []
 
         if not intervals:
-            # Simple duration-based workout
             steps.append(self._make_step(
                 step_order=step_order,
                 step_type="interval",
@@ -57,9 +116,7 @@ class GarminService:
                 power_high = interval.get("power_high")
 
                 if repeats > 1:
-                    # Repeat block
                     repeat_steps = []
-                    # Work step
                     work_step = self._make_step(
                         step_order=1,
                         step_type="interval",
@@ -70,8 +127,6 @@ class GarminService:
                         target_high=power_high,
                     )
                     repeat_steps.append(work_step)
-
-                    # Rest step if provided
                     rest_s = interval.get("rest_seconds", 0)
                     if rest_s > 0:
                         rest_step = self._make_step(
@@ -82,7 +137,6 @@ class GarminService:
                             target_type="no.target",
                         )
                         repeat_steps.append(rest_step)
-
                     steps.append({
                         "type": "RepeatGroupDTO",
                         "stepOrder": step_order,
@@ -100,7 +154,6 @@ class GarminService:
                         target_high=power_high,
                     )
                     steps.append(step)
-
                 step_order += 1
 
         return {
@@ -114,16 +167,8 @@ class GarminService:
             }],
         }
 
-    def _make_step(
-        self,
-        step_order: int,
-        step_type: str,
-        duration_type: str,
-        duration_value: int,
-        target_type: str,
-        target_low: Optional[float] = None,
-        target_high: Optional[float] = None,
-    ) -> Dict:
+    def _make_step(self, step_order, step_type, duration_type, duration_value,
+                   target_type, target_low=None, target_high=None) -> Dict:
         step = {
             "type": "ExecutableStepDTO",
             "stepOrder": step_order,
@@ -137,43 +182,3 @@ class GarminService:
         if target_high is not None:
             step["targetValueTwo"] = target_high
         return step
-
-    async def export_workout(self, workout: PlannedWorkout) -> Optional[str]:
-        """
-        Export a workout to Garmin Connect.
-        Returns the Garmin workout ID on success.
-        """
-        if not self._client:
-            if not await self.connect():
-                return None
-
-        garmin_workout = self._build_garmin_workout(workout)
-
-        try:
-            response = garth.connectapi(
-                "/workout-service/workout",
-                method="POST",
-                json=garmin_workout,
-            )
-            workout_id = response.get("workoutId")
-            logger.info("Exported workout '%s' to Garmin (ID: %s)", workout.title, workout_id)
-            return str(workout_id)
-        except Exception as e:
-            logger.error("Failed to export workout to Garmin: %s", e)
-            return None
-
-    async def schedule_workout(self, garmin_workout_id: str, date: datetime) -> bool:
-        """Schedule an exported workout on a specific date in Garmin Connect."""
-        if not self._client:
-            if not await self.connect():
-                return False
-        try:
-            garth.connectapi(
-                f"/workout-service/schedule/{garmin_workout_id}",
-                method="POST",
-                json={"date": date.strftime("%Y-%m-%d")},
-            )
-            return True
-        except Exception as e:
-            logger.error("Failed to schedule workout: %s", e)
-            return False
