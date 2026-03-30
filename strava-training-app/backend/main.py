@@ -641,6 +641,10 @@ async def get_goals(db: AsyncSession = Depends(get_db)):
             "goal_description": g.goal_description,
             "active": g.active,
             "ai_plan_summary": g.ai_plan_summary,
+            "weekly_hours": g.weekly_hours,
+            "global_plan": g.global_plan,
+            "global_plan_generated_at": g.global_plan_generated_at.isoformat() if g.global_plan_generated_at else None,
+            "last_week_settings": g.last_week_settings,
         }
         for g in goals
     ]
@@ -650,8 +654,6 @@ async def get_goals(db: AsyncSession = Depends(get_db)):
 async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     ftp = await get_current_ftp(db)
-
-    # Get current CTL
     result = await db.execute(
         select(TrainingMetrics).order_by(TrainingMetrics.date.desc()).limit(1)
     )
@@ -668,15 +670,15 @@ async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
         current_ftp=ftp,
         current_ctl=current_ctl,
         active=True,
+        weekly_hours=data.get("weekly_hours"),
     )
     db.add(goal)
     await db.commit()
     await db.refresh(goal)
 
-    # Generate AI plan summary in background
     if CONFIG.get("anthropic_api_key"):
         ai = AICoachService(CONFIG["anthropic_api_key"])
-        summary = await ai.suggest_goal_plan(goal, current_ctl, ftp)
+        summary = await ai.generate_goal_summary(goal, ftp, current_ctl)
         if summary:
             goal.ai_plan_summary = summary
             await db.commit()
@@ -684,31 +686,94 @@ async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
     return {"id": goal.id, "status": "created"}
 
 
-@app.post("/trainiq/planning/generate-week")
-async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
-    """Generate AI workout plan for a week."""
+@app.post("/trainiq/planning/generate-global-plan")
+async def generate_global_plan(request: Request, db: AsyncSession = Depends(get_db)):
+    """Generate or regenerate the phased global training plan for the active goal."""
     data = await request.json()
-    week_start = datetime.fromisoformat(data["week_start"])
     goal_id = data.get("goal_id")
-    available_days = data.get("available_days", [1, 2, 3, 4, 6])
 
     if not CONFIG.get("anthropic_api_key"):
         raise HTTPException(status_code=400, detail="Anthropic API key not configured")
 
-    # Get goal
-    goal = None
-    if goal_id:
-        result = await db.execute(select(TrainingGoal).where(TrainingGoal.id == goal_id))
-        goal = result.scalar_one_or_none()
+    result = await db.execute(
+        select(TrainingGoal).where(TrainingGoal.id == goal_id) if goal_id
+        else select(TrainingGoal).where(TrainingGoal.active == True).limit(1)
+    )
+    goal = result.scalar_one_or_none()
     if not goal:
-        result = await db.execute(
-            select(TrainingGoal).where(TrainingGoal.active == True).limit(1)
-        )
-        goal = result.scalar_one_or_none()
+        raise HTTPException(status_code=404, detail="No active goal found")
+
+    # Update weekly_hours if provided
+    if "weekly_hours" in data:
+        goal.weekly_hours = data["weekly_hours"]
+
+    ftp = await get_current_ftp(db)
+    result = await db.execute(
+        select(TrainingMetrics).order_by(TrainingMetrics.date.desc()).limit(1)
+    )
+    latest = result.scalar_one_or_none()
+    ctl = latest.ctl if latest else 0
+
+    # Get recent actual weekly TSS for deviation detection
+    cutoff = datetime.now() - timedelta(days=28)
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.start_date >= cutoff)
+        .order_by(Activity.start_date)
+    )
+    recent_acts = result.scalars().all()
+    # Group by week
+    week_map = {}
+    for a in recent_acts:
+        week = a.start_date.strftime("%Y-%m-%d")[:8] + "01"  # rough week key
+        week_key = (a.start_date - timedelta(days=a.start_date.weekday())).strftime("%Y-%m-%d")
+        if week_key not in week_map:
+            week_map[week_key] = {"week": week_key, "actual_tss": 0, "actual_hours": 0}
+        week_map[week_key]["actual_tss"] += a.tss or 0
+        week_map[week_key]["actual_hours"] += (a.moving_time or 0) / 3600
+
+    ai = AICoachService(CONFIG["anthropic_api_key"])
+    plan = await ai.generate_global_plan(
+        goal=goal,
+        weekly_hours=goal.weekly_hours or 8,
+        current_ctl=ctl,
+        ftp=ftp,
+        actual_last_weeks=list(week_map.values()),
+    )
+
+    if not plan:
+        raise HTTPException(status_code=500, detail="Failed to generate global plan")
+
+    goal.global_plan = plan
+    goal.global_plan_generated_at = datetime.now()
+    await db.commit()
+    return plan
+
+
+@app.post("/trainiq/planning/generate-week")
+async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
+    """Generate AI workout plan for a specific week with per-day settings."""
+    data = await request.json()
+    week_start = datetime.fromisoformat(data["week_start"])
+    goal_id = data.get("goal_id")
+    # New format: list of day settings
+    day_settings = data.get("day_settings", [])
+
+    if not CONFIG.get("anthropic_api_key"):
+        raise HTTPException(status_code=400, detail="Anthropic API key not configured")
+
+    result = await db.execute(
+        select(TrainingGoal).where(TrainingGoal.id == goal_id) if goal_id
+        else select(TrainingGoal).where(TrainingGoal.active == True).limit(1)
+    )
+    goal = result.scalar_one_or_none()
     if not goal:
         raise HTTPException(status_code=400, detail="No active training goal found")
 
-    # Get current PMC
+    # Save day settings for next week pre-fill
+    goal.last_week_settings = day_settings
+    await db.commit()
+
     result = await db.execute(
         select(TrainingMetrics).order_by(TrainingMetrics.date.desc()).limit(1)
     )
@@ -719,13 +784,21 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 
     ftp = await get_current_ftp(db)
 
-    # Get recent activities
     cutoff = datetime.now() - timedelta(days=14)
     result = await db.execute(
         select(Activity).where(Activity.start_date >= cutoff).order_by(Activity.start_date.desc())
     )
     recent = result.scalars().all()
     recent_dicts = [_activity_to_dict(a) for a in recent]
+
+    # Find matching week in global plan
+    global_plan_week = None
+    if goal.global_plan:
+        for phase in goal.global_plan.get("phases", []):
+            for week in phase.get("weeks", []):
+                if week.get("week_start") == week_start.strftime("%Y-%m-%d"):
+                    global_plan_week = week
+                    break
 
     ai = AICoachService(CONFIG["anthropic_api_key"])
     plan = await ai.generate_weekly_plan(
@@ -736,13 +809,28 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
         ftp=ftp,
         recent_activities=recent_dicts,
         week_start=week_start,
-        available_days=available_days,
+        day_settings=day_settings,
+        global_plan_week=global_plan_week,
     )
 
     if not plan:
         raise HTTPException(status_code=500, detail="Failed to generate plan")
 
-    # Save workouts to database
+    # Delete existing planned workouts for this week before saving new ones
+    week_end = week_start + timedelta(days=7)
+    await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.date >= week_start)
+        .where(PlannedWorkout.date < week_end)
+    )
+    existing = (await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.date >= week_start)
+        .where(PlannedWorkout.date < week_end)
+    )).scalars().all()
+    for wo in existing:
+        await db.delete(wo)
+
     saved_ids = []
     for wo in plan.get("workouts", []):
         workout = PlannedWorkout(
@@ -763,6 +851,8 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     plan["saved_workout_ids"] = saved_ids
     return plan
+
+
 
 
 @app.post("/trainiq/planning/export-to-garmin/{workout_id}")
