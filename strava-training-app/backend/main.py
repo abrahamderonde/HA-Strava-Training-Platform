@@ -855,7 +855,29 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 
-@app.post("/trainiq/planning/export-to-garmin/{workout_id}")
+@app.get("/trainiq/planning/download-fit/{workout_id}")
+async def download_fit(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Download a workout as a Garmin FIT file for manual import."""
+    from fastapi.responses import Response
+    from .services.fit_export import generate_workout_fit
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    try:
+        fit_data = generate_workout_fit(workout)
+        filename = f"{workout.date.strftime('%Y-%m-%d')}_{workout.title.replace(' ', '_')[:30]}.fit"
+        return Response(
+            content=fit_data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        logger.error("FIT generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"FIT generation failed: {e}")
+
+
+
 async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Export a planned workout to Garmin Connect."""
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
