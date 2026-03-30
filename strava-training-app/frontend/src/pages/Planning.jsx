@@ -418,8 +418,15 @@ export default function Planning() {
                           <div style={{ fontSize: 18, fontWeight: 700 }}>{w.target_duration_minutes}m</div>
                           <div style={{ fontSize: 10, color: 'var(--muted)' }}>duration</div>
                         </div>
+                        <a href={`/trainiq/planning/download-fit/${w.id}`} download
+                          style={{ textDecoration: 'none' }}>
+                          <button className="btn btn-ghost btn-sm" title="Download FIT file for manual Garmin import">
+                            <Download size={13} />
+                            .fit
+                          </button>
+                        </a>
                         <button className="btn btn-ghost btn-sm" onClick={() => exportToGarmin(w.id)}
-                          title="Export to Garmin" disabled={w.exported_to_garmin}>
+                          title="Export to Garmin Connect" disabled={w.exported_to_garmin}>
                           <Download size={13} />
                           {w.exported_to_garmin ? 'Exported' : 'Garmin'}
                         </button>
