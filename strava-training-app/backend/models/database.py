@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Text, JSON
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Text, JSON, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -20,6 +20,20 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate existing tables — add columns if they don't exist yet
+        migrations = [
+            "ALTER TABLE training_goals ADD COLUMN weekly_hours REAL",
+            "ALTER TABLE training_goals ADD COLUMN global_plan JSON",
+            "ALTER TABLE training_goals ADD COLUMN global_plan_generated_at DATETIME",
+            "ALTER TABLE training_goals ADD COLUMN last_week_settings JSON",
+            "ALTER TABLE activities ADD COLUMN commute BOOLEAN DEFAULT 0",
+            "ALTER TABLE activities ADD COLUMN trainer BOOLEAN DEFAULT 0",
+        ]
+        for sql in migrations:
+            try:
+                await conn.execute(text(sql))
+            except Exception:
+                pass  # column already exists — ignore
 
 
 class Activity(Base):
