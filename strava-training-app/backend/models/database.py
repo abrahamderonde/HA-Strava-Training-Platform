@@ -130,6 +130,10 @@ class TrainingGoal(Base):
     current_ctl = Column(Float)
     active = Column(Boolean, default=True)
     ai_plan_summary = Column(Text, nullable=True)
+    weekly_hours = Column(Float, nullable=True)       # target hours per week
+    global_plan = Column(JSON, nullable=True)         # [{week, phase, hours, tss, description}]
+    global_plan_generated_at = Column(DateTime, nullable=True)
+    last_week_settings = Column(JSON, nullable=True)  # remembered day settings from last planning
 
 
 class StravaToken(Base):
