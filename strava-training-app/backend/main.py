@@ -411,6 +411,111 @@ async def latlng_stats(db: AsyncSession = Depends(get_db)):
 
 
 
+
+
+@app.post("/trainiq/commutes/preview")
+async def preview_synthetic_commutes(request: Request, db: AsyncSession = Depends(get_db)):
+    """Preview how many synthetic commute activities would be created."""
+    data = await request.json()
+    start_date = datetime.fromisoformat(data["start_date"])
+    end_date = datetime.fromisoformat(data["end_date"])
+    days_of_week = data.get("days_of_week", [0, 1, 2, 3])
+    rides_per_day = data.get("rides_per_day", 2)
+    duration_minutes = data.get("duration_minutes", 20)
+    intensity_factor = data.get("intensity_factor", 0.65)
+
+    ftp = await get_current_ftp(db)
+    tss_per_ride = round((duration_minutes / 60) * (intensity_factor ** 2) * 100, 1)
+    tss_per_day = tss_per_ride * rides_per_day
+
+    days = []
+    current = start_date
+    while current <= end_date:
+        if current.weekday() in days_of_week:
+            days.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+
+    return {
+        "total_days": len(days),
+        "total_rides": len(days) * rides_per_day,
+        "tss_per_ride": tss_per_ride,
+        "tss_per_day": tss_per_day,
+        "total_tss": round(len(days) * tss_per_day, 1),
+        "ftp_used": round(ftp, 1),
+        "sample_days": days[:5],
+    }
+
+
+@app.post("/trainiq/commutes/generate")
+async def generate_synthetic_commutes(request: Request, db: AsyncSession = Depends(get_db)):
+    """Generate synthetic commute activities for historical backfill."""
+    data = await request.json()
+    start_date = datetime.fromisoformat(data["start_date"])
+    end_date = datetime.fromisoformat(data["end_date"])
+    days_of_week = data.get("days_of_week", [0, 1, 2, 3])
+    rides_per_day = data.get("rides_per_day", 2)
+    duration_minutes = data.get("duration_minutes", 20)
+    intensity_factor = data.get("intensity_factor", 0.65)
+
+    ftp = await get_current_ftp(db)
+    duration_seconds = duration_minutes * 60
+    tss = round((duration_minutes / 60) * (intensity_factor ** 2) * 100, 1)
+    distance_m = (duration_minutes / 60) * 15000  # assume 15 km/h
+
+    created = 0
+    current = start_date
+    while current <= end_date:
+        if current.weekday() in days_of_week:
+            for ride_num in range(rides_per_day):
+                hour = 8 if ride_num == 0 else 17
+                ride_time = current.replace(hour=hour, minute=0, second=0)
+                name = "Morning commute (estimated)" if ride_num == 0 else "Afternoon commute (estimated)"
+                activity = Activity(
+                    strava_id=None,
+                    name=name,
+                    sport_type="Ride",
+                    start_date=ride_time,
+                    elapsed_time=duration_seconds,
+                    moving_time=duration_seconds,
+                    distance=distance_m,
+                    total_elevation_gain=0,
+                    average_speed=distance_m / duration_seconds,
+                    max_speed=distance_m / duration_seconds,
+                    has_power=False,
+                    tss=tss,
+                    np=None,
+                    if_=intensity_factor,
+                    commute=True,
+                    synthetic=True,
+                )
+                db.add(activity)
+                created += 1
+        current += timedelta(days=1)
+
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"created": created, "total_tss": round(created * tss, 1)}
+
+
+@app.delete("/trainiq/commutes/synthetic")
+async def delete_synthetic_commutes(db: AsyncSession = Depends(get_db)):
+    """Delete all synthetic commute activities and rebuild PMC."""
+    result = await db.execute(select(Activity).where(Activity.synthetic == True))
+    acts = result.scalars().all()
+    count = len(acts)
+    for act in acts:
+        await db.delete(act)
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"deleted": count}
+
+
+@app.get("/trainiq/commutes/synthetic/count")
+async def count_synthetic_commutes(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Activity).where(Activity.synthetic == True))
+    return {"count": len(result.scalars().all())}
+
+
 async def backfill_latlng(background_tasks: BackgroundTasks):
     """Re-fetch latlng streams for cycling activities that are missing GPS data."""
     async def _backfill():
