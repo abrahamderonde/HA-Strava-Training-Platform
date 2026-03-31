@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 FIT_EPOCH = 631065600  # seconds between Unix epoch and FIT epoch (Dec 31, 1989)
 ENDIAN = '<'  # little-endian
 
-# FIT message numbers
+# FIT message numbers (from official FIT SDK)
 MESG_FILE_ID = 0
-MESG_WORKOUT = 190
-MESG_WORKOUT_STEP = 196
+MESG_WORKOUT = 26
+MESG_WORKOUT_STEP = 27
 
 # FIT base types
 BASE_ENUM = 0x00
@@ -142,13 +142,12 @@ def generate_workout_fit(workout) -> bytes:
 
     # ── file_id message (local 0) ──────────────────────────────────────────
     defn = writer._write_definition(0, MESG_FILE_ID, [
-        (0, 2, BASE_UINT16),   # type (value 5 = workout)
-        (1, 4, BASE_UINT32Z),  # manufacturer (0 = development)
-        (2, 4, BASE_UINT32Z),  # product
+        (0, 1, BASE_ENUM),     # type: 5 = workout
+        (1, 2, BASE_UINT16),   # manufacturer: 1 = Garmin
+        (2, 2, BASE_UINT16),   # product
         (4, 4, BASE_UINT32),   # time_created
-        (5, 4, BASE_UINT32Z),  # serial_number
     ])
-    data = writer._write_data(0, [5, 0, 0, now_fit, 0])
+    data = writer._write_data(0, [5, 1, 0, now_fit])
     writer.add(defn, data)
 
     # ── workout message (local 1) ──────────────────────────────────────────
@@ -156,7 +155,7 @@ def generate_workout_fit(workout) -> bytes:
     num_steps = _count_steps(intervals)
 
     defn = writer._write_definition(1, MESG_WORKOUT, [
-        (4, 1, BASE_ENUM),     # sport
+        (4, 1, BASE_ENUM),     # sport (1 byte enum)
         (5, 2, BASE_UINT16),   # num_valid_steps
         (8, 16, BASE_STRING),  # wkt_name (max 16 chars)
     ])
@@ -168,7 +167,7 @@ def generate_workout_fit(workout) -> bytes:
         (0, 2, BASE_UINT16),   # message_index
         (1, 16, BASE_STRING),  # wkt_step_name
         (2, 1, BASE_ENUM),     # duration_type
-        (3, 4, BASE_UINT32),   # duration_value (ms for time)
+        (3, 4, BASE_UINT32),   # duration_value (ms)
         (4, 1, BASE_ENUM),     # target_type
         (5, 4, BASE_UINT32),   # target_value
         (6, 4, BASE_UINT32),   # custom_target_value_low (watts)

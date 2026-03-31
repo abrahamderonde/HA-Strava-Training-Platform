@@ -157,6 +157,7 @@ Respond ONLY with valid JSON:
         day_settings: one entry per training day with time, indoor flag, commute time.
         """
         zones = get_power_zones(ftp)
+        zones_str = json.dumps([{"zone": z["zone"], "name": z["name"], "range": f"{z['min']}-{z['max']}W"} for z in zones], indent=2)
         day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
         # Build day context — explicit dates + commute TSS
@@ -207,7 +208,7 @@ Respond ONLY with valid JSON:
 - Current Form (TSB): {current_tsb:.1f}
 {global_context}
 ## Power Zones
-{json.dumps([{{"zone": z["zone"], "name": z["name"], "range": f"{z['min']}-{z['max']}W"}} for z in zones], indent=2)}
+{zones_str}
 
 ## Goal
 - Event: {goal.event_name} on {goal.event_date.strftime("%Y-%m-%d")}
