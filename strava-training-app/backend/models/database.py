@@ -28,6 +28,7 @@ async def init_db():
             "ALTER TABLE training_goals ADD COLUMN last_week_settings JSON",
             "ALTER TABLE activities ADD COLUMN commute BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN trainer BOOLEAN DEFAULT 0",
+            "ALTER TABLE activities ADD COLUMN synthetic BOOLEAN DEFAULT 0",
         ]
         for sql in migrations:
             try:
@@ -64,7 +65,8 @@ class Activity(Base):
     gear_id = Column(String, nullable=True)
     # Raw power stream stored as JSON array for power curve calculation
     commute = Column(Boolean, default=False)
-    trainer = Column(Boolean, default=False)       # indoor / virtual ride flag
+    trainer = Column(Boolean, default=False)
+    synthetic = Column(Boolean, default=False)  # True = generated, not from Strava
     power_stream = Column(JSON, nullable=True)
     hr_stream = Column(JSON, nullable=True)
     latlng_stream = Column(JSON, nullable=True)   # [[lat,lon], ...]
