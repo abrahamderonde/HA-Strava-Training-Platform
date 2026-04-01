@@ -41,7 +41,7 @@ class Activity(Base):
     __tablename__ = "activities"
 
     id = Column(Integer, primary_key=True)
-    strava_id = Column(Integer, unique=True, index=True)
+    strava_id = Column(Integer, index=True, nullable=True)  # NULL for synthetic activities
     name = Column(String)
     sport_type = Column(String)  # Ride, VirtualRide, Run, etc.
     start_date = Column(DateTime, index=True)

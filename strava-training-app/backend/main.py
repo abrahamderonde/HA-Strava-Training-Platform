@@ -462,6 +462,18 @@ async def generate_synthetic_commutes(request: Request, db: AsyncSession = Depen
     tss = round((duration_minutes / 60) * (intensity_factor ** 2) * 100, 1)
     distance_m = (duration_minutes / 60) * 15000  # assume 15 km/h
 
+    # Use a large negative synthetic ID base to avoid conflicts
+    # Find current min synthetic ID
+    result = await db.execute(
+        select(Activity.strava_id)
+        .where(Activity.synthetic == True)
+        .where(Activity.strava_id != None)
+        .order_by(Activity.strava_id)
+        .limit(1)
+    )
+    min_existing = result.scalar_one_or_none()
+    next_id = min(min_existing or -1, -1) - 1
+
     created = 0
     current = start_date
     while current <= end_date:
@@ -471,7 +483,7 @@ async def generate_synthetic_commutes(request: Request, db: AsyncSession = Depen
                 ride_time = current.replace(hour=hour, minute=0, second=0)
                 name = "Morning commute (estimated)" if ride_num == 0 else "Afternoon commute (estimated)"
                 activity = Activity(
-                    strava_id=None,
+                    strava_id=next_id,  # negative unique ID
                     name=name,
                     sport_type="Ride",
                     start_date=ride_time,
@@ -489,21 +501,33 @@ async def generate_synthetic_commutes(request: Request, db: AsyncSession = Depen
                     synthetic=True,
                 )
                 db.add(activity)
+                next_id -= 1
                 created += 1
         current += timedelta(days=1)
 
     await db.commit()
+    logger.info("Generated %d synthetic commute activities", created)
     await recalculate_pmc(db)
-    return {"created": created, "total_tss": round(created * tss, 1)}
+    logger.info("PMC rebuilt after commute generation")
+    total_tss = round(created * tss, 1)
+    return {"created": created, "total_tss": total_tss, "tss_per_ride": tss}
 
 
 @app.delete("/trainiq/commutes/synthetic")
 async def delete_synthetic_commutes(db: AsyncSession = Depends(get_db)):
     """Delete all synthetic commute activities and rebuild PMC."""
-    result = await db.execute(select(Activity).where(Activity.synthetic == True))
+    result = await db.execute(
+        select(Activity).where(Activity.synthetic == True)
+    )
     acts = result.scalars().all()
-    count = len(acts)
-    for act in acts:
+    # Also catch any with NULL strava_id that were created before the fix
+    result2 = await db.execute(
+        select(Activity).where(Activity.strava_id == None)
+    )
+    null_acts = result2.scalars().all()
+    all_acts = {a.id: a for a in acts + null_acts}
+    count = len(all_acts)
+    for act in all_acts.values():
         await db.delete(act)
     await db.commit()
     await recalculate_pmc(db)
