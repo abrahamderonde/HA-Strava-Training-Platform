@@ -69,7 +69,7 @@ export default function CommuteGenerator() {
         })
       })
       const data = await res.json()
-      setStatus({ type: 'success', message: `Created ${data.created} activities (${data.total_tss} total TSS). PMC rebuilt.` })
+      setStatus({ type: 'success', message: `Created ${data.created} activities (${data.total_tss} total TSS). PMC rebuilt — go to PMC page and extend the date range to see historical CTL.` })
       setPreview(null)
       setConfirmed(false)
       fetchExistingCount()
