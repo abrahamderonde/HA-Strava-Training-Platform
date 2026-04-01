@@ -10,10 +10,11 @@ import GpxChecker from './pages/GpxChecker'
 import Eddington from './pages/Eddington'
 import Settings from './pages/Settings'
 import CommuteGenerator from './pages/CommuteGenerator'
+import Stats from './pages/Stats'
 import {
   LayoutDashboard, Calendar as CalIcon, TrendingUp,
   Zap, Target, Settings as SettingsIcon, Activity,
-  Map, FileSearch, Award, Bike
+  Map, FileSearch, Award, Bike, BarChart2
 } from 'lucide-react'
 import './index.css'
 
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/gemeenten',    icon: Map,              label: 'Gemeenten'  },
   { to: '/gpx-checker',  icon: FileSearch,       label: 'GPX Check'  },
   { to: '/eddington',    icon: Award,            label: 'Eddington'  },
+  { to: '/stats',        icon: BarChart2,        label: 'Stats'      },
   { to: '/commutes',     icon: Bike,             label: 'Commutes'   },
   { to: '/settings',     icon: SettingsIcon,     label: 'Settings'   },
 ]
@@ -82,6 +84,7 @@ export default function App() {
             <Route path="/gemeenten"    element={<Gemeenten />} />
             <Route path="/gpx-checker"  element={<GpxChecker />} />
             <Route path="/eddington"    element={<Eddington />} />
+            <Route path="/stats"       element={<Stats />} />
             <Route path="/commutes"     element={<CommuteGenerator />} />
             <Route path="/settings"     element={<Settings />} />
           </Routes>

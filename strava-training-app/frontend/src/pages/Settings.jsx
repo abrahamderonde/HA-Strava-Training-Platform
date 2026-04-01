@@ -124,6 +124,8 @@ export default function Settings() {
                 ['Strava', config.strava_configured ? '✓ Configured' : '✗ Not configured', config.strava_configured ? 'var(--accent2)' : 'var(--accent)'],
                 ['Garmin', config.garmin_configured ? '✓ Configured' : '— Not configured', config.garmin_configured ? 'var(--accent2)' : 'var(--muted)'],
                 ['AI Planning', config.anthropic_configured ? '✓ Configured' : '— Not configured', config.anthropic_configured ? 'var(--accent2)' : 'var(--muted)'],
+              ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
+              ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
               ].map(([label, value, color], i, arr) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 6, marginBottom: 6 }}>
                   <span style={{ color: 'var(--muted)' }}>{label}</span>

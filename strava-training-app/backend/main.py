@@ -25,6 +25,8 @@ from .models.database import (
 )
 from .services.strava_service import StravaService
 from .services.garmin_service import GarminService
+from .services.intervals_service import IntervalsService
+from .services.intervals_service import IntervalsService
 from .services.ai_coach import AICoachService
 from .services.training_science import (
     calculate_pmc, fit_critical_power, build_power_curve,
@@ -48,6 +50,8 @@ def load_config():
         "garmin_email": os.getenv("GARMIN_EMAIL", ""),
         "garmin_password": os.getenv("GARMIN_PASSWORD", ""),
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+        "intervals_api_key": os.getenv("INTERVALS_API_KEY", ""),
+        "intervals_athlete_id": os.getenv("INTERVALS_ATHLETE_ID", ""),
         "athlete_weight_kg": int(os.getenv("ATHLETE_WEIGHT_KG", "70")),
         "ftp_initial": int(os.getenv("FTP_INITIAL", "200")),
     }
@@ -221,6 +225,8 @@ async def get_settings():
         "strava_configured": bool(CONFIG.get("strava_client_id")),
         "garmin_configured": bool(CONFIG.get("garmin_email")),
         "anthropic_configured": bool(CONFIG.get("anthropic_api_key")),
+        "intervals_configured": bool(CONFIG.get("intervals_api_key") and CONFIG.get("intervals_athlete_id")),
+        "intervals_configured": bool(CONFIG.get("intervals_icu_api_key")),
     }
 
 
@@ -659,7 +665,79 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
     return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
 
 
-@app.get("/trainiq/analytics/ftp")
+@app.get("/trainiq/analytics/pmc-all")
+async def get_pmc_all(db: AsyncSession = Depends(get_db)):
+    """Return all PMC history for year-over-year comparison."""
+    result = await db.execute(
+        select(TrainingMetrics).order_by(TrainingMetrics.date)
+    )
+    metrics = result.scalars().all()
+    return [
+        {
+            "date": m.date.isoformat(),
+            "ctl": round(m.ctl, 1) if m.ctl else 0,
+            "atl": round(m.atl, 1) if m.atl else 0,
+            "tsb": round(m.tsb, 1) if m.tsb else 0,
+            "tss": round(m.daily_tss, 1) if m.daily_tss else 0,
+        }
+        for m in metrics
+    ]
+
+
+@app.get("/trainiq/analytics/distance-by-year")
+async def get_distance_by_year(
+    exclude_commutes: bool = False,
+    exclude_indoor: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return weekly distance per year for multi-year comparison charts."""
+    query = select(
+        Activity.start_date,
+        Activity.distance,
+        Activity.sport_type,
+        Activity.commute,
+        Activity.trainer,
+        Activity.synthetic,
+    ).where(
+        Activity.sport_type.in_(["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"])
+    ).where(Activity.distance > 0)
+
+    if exclude_commutes:
+        query = query.where(Activity.commute == False)
+    if exclude_indoor:
+        query = query.where(Activity.sport_type != "VirtualRide")
+        query = query.where(Activity.trainer == False)
+
+    # Always exclude synthetic
+    query = query.where(Activity.synthetic == False)
+
+    result = await db.execute(query.order_by(Activity.start_date))
+    rows = result.all()
+
+    # Group by year and ISO week number → {year: {week: km}}
+    from collections import defaultdict
+    year_week = defaultdict(lambda: defaultdict(float))
+    for row in rows:
+        dt = row.start_date
+        year = dt.year
+        # Day of year 1-365
+        doy = dt.timetuple().tm_yday
+        year_week[year][doy] += (row.distance or 0) / 1000
+
+    # Return as {year: [{doy, km}]}
+    years = {}
+    for year, doys in sorted(year_week.items()):
+        # Aggregate into weekly buckets (week 1-52)
+        weekly = defaultdict(float)
+        for doy, km in doys.items():
+            week = min(52, (doy - 1) // 7 + 1)
+            weekly[week] += km
+        years[str(year)] = [{"week": w, "km": round(km, 1)} for w, km in sorted(weekly.items())]
+
+    return years
+
+
+
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
@@ -982,6 +1060,71 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
     return plan
 
 
+
+
+@app.post("/trainiq/planning/push-to-intervals/{workout_id}")
+async def push_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Push a planned workout to intervals.icu (which syncs to Garmin automatically)."""
+    from .services.fit_export import generate_workout_fit
+    api_key = CONFIG.get("intervals_icu_api_key", "")
+    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="intervals.icu API key not configured in app settings")
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    # Generate FIT file for accurate structured workout
+    try:
+        fit_bytes = generate_workout_fit(workout)
+    except Exception as e:
+        logger.warning("FIT generation failed, using description format: %s", e)
+        fit_bytes = None
+    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
+    event_id = await svc.push_workout(workout, fit_bytes=fit_bytes)
+    if not event_id:
+        raise HTTPException(status_code=500, detail="Failed to push to intervals.icu — check log")
+    return {"status": "pushed", "intervals_event_id": event_id}
+
+
+@app.get("/trainiq/planning/intervals-test")
+async def test_intervals_connection():
+    """Test intervals.icu API credentials."""
+    api_key = CONFIG.get("intervals_icu_api_key", "")
+    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
+    if not api_key:
+        return {"ok": False, "error": "Not configured — add intervals_icu_api_key in app settings"}
+    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
+    ok = await svc.verify_connection()
+    return {"ok": ok, "athlete_id": athlete_id}
+
+
+@app.post("/trainiq/planning/export-to-intervals/{workout_id}")
+async def export_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Export a planned workout to intervals.icu (which then syncs to Garmin Connect)."""
+    from .services.intervals_service import IntervalsService
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
+        raise HTTPException(status_code=400, detail="intervals.icu API key and athlete ID not configured")
+    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
+    ftp = await get_current_ftp(db)
+    event_id = await svc.push_workout(workout, ftp=ftp)
+    if event_id:
+        return {"status": "exported", "intervals_event_id": event_id}
+    raise HTTPException(status_code=500, detail="Failed to push workout to intervals.icu — check log")
+
+
+@app.get("/trainiq/intervals/verify")
+async def verify_intervals():
+    """Verify intervals.icu credentials."""
+    from .services.intervals_service import IntervalsService
+    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
+        return {"ok": False, "error": "Not configured"}
+    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
+    return await svc.verify_connection()
 
 
 @app.get("/trainiq/planning/download-fit/{workout_id}")
