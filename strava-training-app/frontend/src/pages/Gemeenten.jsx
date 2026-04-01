@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Map, MapPin, RefreshCw } from 'lucide-react'
 
-/**
- * Dutch gemeente choropleth map using Leaflet + PDOK boundaries.
- * Visited = deep orange, unvisited = dark slate.
- */
 export default function Gemeenten() {
   const mapRef = useRef(null)
   const leafletMap = useRef(null)
@@ -15,8 +11,9 @@ export default function Gemeenten() {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [mapReady, setMapReady] = useState(false)
+  const [highlightYear, setHighlightYear] = useState('all')
+  const [showRecent, setShowRecent] = useState(true)
 
-  // Load Leaflet dynamically
   useEffect(() => {
     if (window.L) { setMapReady(true); return }
     const link = document.createElement('link')
@@ -29,9 +26,7 @@ export default function Gemeenten() {
     document.head.appendChild(script)
   }, [])
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  useEffect(() => { fetchData() }, [])
 
   const fetchData = async () => {
     setLoading(true)
@@ -44,77 +39,80 @@ export default function Gemeenten() {
     setLoading(false)
   }
 
+  // Init map
   useEffect(() => {
     if (!mapReady || !mapRef.current || leafletMap.current) return
     const L = window.L
-
-    leafletMap.current = L.map(mapRef.current, {
-      center: [52.3, 5.3],
-      zoom: 7,
-      zoomControl: true,
-    })
-
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    leafletMap.current = L.map(mapRef.current, { center: [52.3, 5.3], zoom: 7 })
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       { attribution: '© OpenStreetMap © CartoDB', maxZoom: 19 }
     ).addTo(leafletMap.current)
   }, [mapReady])
 
-  // Re-render gemeente layer when data changes
+  // Re-render layer when data or highlight year changes
   useEffect(() => {
     if (!mapReady || !leafletMap.current) return
     loadGemeenteLayer()
-  }, [mapReady, visited])
+  }, [mapReady, visited, highlightYear])
 
   const loadGemeenteLayer = async () => {
     const L = window.L
     if (!L) return
-
     try {
       const res = await fetch('/trainiq/gemeenten/boundaries')
       const geojson = await res.json()
-      const visitedCodes = new Set(visited.map(v => v.code))
 
-      if (geoLayer.current) {
-        leafletMap.current.removeLayer(geoLayer.current)
+      const visitedMap = {}
+      for (const v of visited) visitedMap[v.code] = v
+
+      // Determine which codes are "highlighted" based on filter
+      const highlighted = new Set()
+      for (const v of visited) {
+        if (highlightYear === 'all') {
+          highlighted.add(v.code)
+        } else {
+          const year = v.first_visit ? new Date(v.first_visit).getFullYear() : null
+          if (year === parseInt(highlightYear)) highlighted.add(v.code)
+        }
       }
+      const visitedAll = new Set(visited.map(v => v.code))
+
+      if (geoLayer.current) leafletMap.current.removeLayer(geoLayer.current)
 
       geoLayer.current = L.geoJSON(geojson, {
         style: (feature) => {
           const props = feature.properties || {}
           const code = props.statcode || props.gemeentecode || props.code || ''
-          const isVisited = visitedCodes.has(code)
-          return {
-            fillColor: isVisited ? '#f97316' : '#1e2533',
-            fillOpacity: isVisited ? 0.75 : 0.5,
-            color: isVisited ? '#fb923c' : '#2d3748',
-            weight: isVisited ? 1.5 : 0.5,
+          if (highlighted.has(code)) {
+            return { fillColor: '#f97316', fillOpacity: 0.8, color: '#fb923c', weight: 1.5 }
           }
+          if (visitedAll.has(code) && highlightYear !== 'all') {
+            // Visited but not in selected year — show muted
+            return { fillColor: '#f97316', fillOpacity: 0.25, color: '#f97316', weight: 0.5 }
+          }
+          return { fillColor: '#1e2533', fillOpacity: 0.55, color: '#2d3748', weight: 0.5 }
         },
         onEachFeature: (feature, layer) => {
           const props = feature.properties || {}
           const code = props.statcode || props.gemeentecode || props.code || ''
           const name = props.statnaam || props.gemeentenaam || props.naam || code
-          const isVisited = new Set(visited.map(v => v.code)).has(code)
-          const visitInfo = visited.find(v => v.code === code)
+          const v = visitedMap[code]
+          const year = v?.first_visit ? new Date(v.first_visit).getFullYear() : null
 
           layer.bindTooltip(
             `<div style="font-family:sans-serif;font-size:13px">
               <strong>${name}</strong><br/>
-              ${isVisited
-                ? `<span style="color:#f97316">✓ Visited</span>${visitInfo?.first_visit ? ` · ${new Date(visitInfo.first_visit).toLocaleDateString('nl-NL')}` : ''}`
+              ${v
+                ? `<span style="color:#f97316">✓ First visited ${year || ''}</span>`
                 : '<span style="color:#6b7280">Not yet visited</span>'}
             </div>`,
             { sticky: true }
           )
-
-          layer.on('mouseover', () => {
-            layer.setStyle({ fillOpacity: isVisited ? 0.95 : 0.7, weight: 2 })
-          })
+          layer.on('mouseover', () => layer.setStyle({ fillOpacity: highlighted.has(code) ? 1 : 0.8, weight: 2 }))
           layer.on('mouseout', () => {
             layer.setStyle({
-              fillOpacity: isVisited ? 0.75 : 0.5,
-              weight: isVisited ? 1.5 : 0.5,
+              fillOpacity: highlighted.has(code) ? 0.8 : visitedAll.has(code) && highlightYear !== 'all' ? 0.25 : 0.55,
+              weight: highlighted.has(code) ? 1.5 : 0.5
             })
           })
         }
@@ -127,110 +125,122 @@ export default function Gemeenten() {
   const triggerScan = async () => {
     setScanning(true)
     await fetch('/trainiq/gemeenten/scan-all', { method: 'POST' })
-    setTimeout(async () => {
-      await fetchData()
-      setScanning(false)
-    }, 3000)
+    setTimeout(async () => { await fetchData(); setScanning(false) }, 3000)
   }
 
+  // Available years from visited data
+  const years = [...new Set(visited.map(v => v.first_visit ? new Date(v.first_visit).getFullYear() : null).filter(Boolean))].sort()
+
+  // Visited in selected year / recently
+  const recentVisited = [...visited]
+    .filter(v => {
+      if (highlightYear === 'all') return true
+      return v.first_visit && new Date(v.first_visit).getFullYear() === parseInt(highlightYear)
+    })
+    .sort((a, b) => (b.first_visit || '').localeCompare(a.first_visit || ''))
+
+  const highlightCount = highlightYear === 'all'
+    ? stats?.visited_count || 0
+    : recentVisited.length
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 20 }}>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 0 }}>
+    <div>
+      {/* Header */}
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1 className="page-title">Gemeentekaart</h1>
-          <p className="page-subtitle">Dutch municipalities visited by cycling</p>
+          <h1 className="page-title">Long Term NL Challenge</h1>
+          <p className="page-subtitle">Dutch municipalities visited by cycling · inspired by Frank van Moorsel</p>
         </div>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={triggerScan}
-          disabled={scanning}
-        >
+        <button className="btn btn-ghost btn-sm" onClick={triggerScan} disabled={scanning}>
           <RefreshCw size={14} className={scanning ? 'spin' : ''} />
-          {scanning ? 'Scanning…' : 'Re-scan activities'}
+          {scanning ? 'Scanning…' : 'Re-scan'}
         </button>
       </div>
 
-      {/* Stats row */}
-      {stats && (
-        <div className="stat-grid" style={{ marginBottom: 0 }}>
-          <div className="stat-tile">
-            <div className="stat-label">Visited</div>
-            <div className="stat-value" style={{ color: 'var(--accent)' }}>{stats.visited_count}</div>
-            <div className="stat-delta" style={{ color: 'var(--muted)' }}>gemeenten</div>
-          </div>
-          <div className="stat-tile">
-            <div className="stat-label">Total NL</div>
-            <div className="stat-value">{stats.total_count}</div>
-          </div>
-          <div className="stat-tile">
-            <div className="stat-label">Coverage</div>
-            <div className="stat-value" style={{ color: stats.percentage > 50 ? 'var(--green)' : 'var(--text)' }}>
-              {stats.percentage}
-              <span className="stat-unit">%</span>
+      {/* Stats + filters row */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        {/* Stats tiles */}
+        {stats && (
+          <div className="stat-grid" style={{ flex: '1 1 300px', marginBottom: 0 }}>
+            <div className="stat-tile">
+              <div className="stat-label">Total visited</div>
+              <div className="stat-value" style={{ color: 'var(--accent)' }}>{stats.visited_count}</div>
+              <div className="stat-delta" style={{ color: 'var(--muted)' }}>of {stats.total_count}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-label">Coverage</div>
+              <div className="stat-value">{stats.percentage}<span className="stat-unit">%</span></div>
+            </div>
+            <div className="stat-tile">
+              <div className="stat-label">{highlightYear === 'all' ? 'Remaining' : `In ${highlightYear}`}</div>
+              <div className="stat-value" style={{ color: highlightYear !== 'all' ? 'var(--accent2)' : 'var(--text)' }}>
+                {highlightYear === 'all' ? stats.total_count - stats.visited_count : highlightCount}
+              </div>
             </div>
           </div>
-          <div className="stat-tile">
-            <div className="stat-label">Remaining</div>
-            <div className="stat-value">{stats.total_count - stats.visited_count}</div>
+        )}
+
+        {/* Year filter */}
+        <div className="card" style={{ flex: '1 1 200px', padding: '12px 16px' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Highlight year</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button onClick={() => setHighlightYear('all')}
+              style={{ padding: '3px 10px', borderRadius: 12, border: '1px solid', fontSize: 12, cursor: 'pointer',
+                borderColor: highlightYear === 'all' ? 'var(--accent)' : 'var(--border)',
+                background: highlightYear === 'all' ? 'rgba(249,115,22,0.15)' : 'transparent',
+                color: highlightYear === 'all' ? 'var(--accent)' : 'var(--muted)' }}>
+              All
+            </button>
+            {years.map(y => (
+              <button key={y} onClick={() => setHighlightYear(String(y))}
+                style={{ padding: '3px 10px', borderRadius: 12, border: '1px solid', fontSize: 12, cursor: 'pointer',
+                  borderColor: highlightYear === String(y) ? 'var(--accent2)' : 'var(--border)',
+                  background: highlightYear === String(y) ? 'rgba(59,130,246,0.15)' : 'transparent',
+                  color: highlightYear === String(y) ? 'var(--accent2)' : 'var(--muted)' }}>
+                {y}
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      {/* Map */}
-      <div style={{
-        flex: 1,
-        minHeight: 500,
-        borderRadius: 14,
-        overflow: 'hidden',
-        border: '1px solid var(--border)',
-        position: 'relative',
-      }}>
-        <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 500 }} />
-        {!mapReady && (
-          <div className="loading" style={{ position: 'absolute', inset: 0, background: 'var(--surface)' }}>
-            Loading map…
-          </div>
-        )}
       </div>
 
-      {/* Visited list */}
-      {visited.length > 0 && (
-        <div className="card">
-          <div className="card-title">Recently Visited Gemeenten</div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: 6,
-            maxHeight: 260,
-            overflowY: 'auto',
-          }}>
-            {[...visited]
-              .sort((a, b) => (b.first_visit || '').localeCompare(a.first_visit || ''))
-              .slice(0, 60)
-              .map(g => (
-                <div key={g.code} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '6px 10px',
-                  background: 'var(--surface2)',
-                  borderRadius: 6,
-                  fontSize: 13,
-                }}>
-                  <MapPin size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontWeight: 500 }}>{g.name}</span>
-                  {g.first_visit && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {new Date(g.first_visit).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: '2-digit' })}
-                    </span>
-                  )}
-                </div>
-              ))}
+      {/* Map + list side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, minHeight: 520 }}>
+        {/* Map */}
+        <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)', minHeight: 520, position: 'relative' }}>
+          <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 520 }} />
+          {!mapReady && (
+            <div style={{ position: 'absolute', inset: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+              Loading map…
+            </div>
+          )}
+        </div>
+
+        {/* Recently visited list */}
+        <div className="card" style={{ overflowY: 'auto', maxHeight: 520, padding: '14px 16px' }}>
+          <div className="card-title" style={{ marginBottom: 10 }}>
+            {highlightYear === 'all' ? 'Recently visited' : `Visited in ${highlightYear}`}
+            <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 6 }}>({recentVisited.length})</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {recentVisited.slice(0, 80).map(g => (
+              <div key={g.code} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                padding: '5px 8px', background: 'var(--surface2)', borderRadius: 6, fontSize: 13 }}>
+                <MapPin size={11} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontWeight: 500 }}>{g.name}</span>
+                {g.first_visit && (
+                  <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>
+                    {new Date(g.first_visit).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
     </div>
   )
 }

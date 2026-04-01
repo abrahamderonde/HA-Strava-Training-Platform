@@ -24,7 +24,7 @@ const NAV = [
   { to: '/pmc',          icon: TrendingUp,       label: 'PMC'        },
   { to: '/power-curve',  icon: Zap,              label: 'Power'      },
   { to: '/planning',     icon: Target,           label: 'Planning'   },
-  { to: '/gemeenten',    icon: Map,              label: 'Gemeenten'  },
+  { to: '/gemeenten',    icon: Map,              label: 'NL Challenge'  },
   { to: '/gpx-checker',  icon: FileSearch,       label: 'GPX Check'  },
   { to: '/eddington',    icon: Award,            label: 'Eddington'  },
   { to: '/stats',        icon: BarChart2,        label: 'Stats'      },
