@@ -25,7 +25,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 
 COPY frontend /app/frontend
 WORKDIR /app/frontend
-RUN npm install && npm run build && echo "Frontend build SUCCESS" || (echo "Frontend build FAILED" && cat /tmp/npm-build.log; true)
+RUN npm install 2>&1 && npm run build 2>&1
 
 WORKDIR /app
 COPY backend /app/backend
