@@ -7,7 +7,7 @@
 ## 1. Workout planning improvements
 
 **Priority:** High
-**Status:** Pending
+**Status:** Testing phase
 
 More detailed user input for workout planning so that the workouts actually fit in busy life
 
@@ -36,7 +36,7 @@ More detailed user input for workout planning so that the workouts actually fit 
 ## 2. Distance Progress Graphs
 
 **Priority:** Medium
-**Status:** Pending
+**Status:** Testing phase
 
 Multi-year distance comparison charts showing how weekly or monthly distance evolves over the calendar year.
 
@@ -56,7 +56,7 @@ Multi-year distance comparison charts showing how weekly or monthly distance evo
 ## 3. Fitness Progress Graph (Year-over-Year CTL)
 
 **Priority:** Medium
-**Status:** Pending
+**Status:** Testing Phase
 
 Chart comparing CTL (fitness) across calendar years, so you can see whether this year's fitness is ahead of or behind last year.
 
@@ -102,7 +102,7 @@ Track bikes and components, log distance/hours per item, get alerts when service
 ## 5. Historical Commute Generator
 
 **Priority:** Medium
-**Status:** Pending
+**Status:** Testing phase
 
 A tool to backfill synthetic commute activities for the period before commutes were tracked with GPS, so that the fitness timeline (CTL/ATL) reflects actual historical load.
 
@@ -131,7 +131,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 ## 6. Gemeente map upgrades
 
 **Priority:** Low
-**Status:** Pending
+**Status:** Testing phase
 
 **add filters:**
 - highlight gemeenten first crossed in year XXXX
@@ -148,7 +148,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 ## 7. Eddington map upgrades
 
 **Priority:** Low
-**Status:** Pending
+**Status:** Testing phase
 
 **progress bar**
 - show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
