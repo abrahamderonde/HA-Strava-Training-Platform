@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Map, MapPin, RefreshCw } from 'lucide-react'
 
-export default function Gemeenten() {
+const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }'
   const mapRef = useRef(null)
   const leafletMap = useRef(null)
   const geoLayer = useRef(null)
@@ -239,7 +239,7 @@ export default function Gemeenten() {
         </div>
       </div>
 
-      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{spinStyle}</style>
     </div>
     </div>
   )

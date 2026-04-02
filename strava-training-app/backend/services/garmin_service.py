@@ -1,13 +1,12 @@
 """
-Garmin Connect integration using garminconnect + garth.
-Exports structured workouts to Garmin Connect.
-Tokens are cached to disk — valid for ~1 year, no repeated logins.
+Garmin Connect integration using python-garminconnect >= 0.2.8.
+This version uses the new TLS-based auth that replaced the deprecated garth SSO.
+Tokens are cached to /data/strava_training/garmin_tokens/ — valid ~1 year.
 """
 import logging
-import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,38 +22,46 @@ class GarminService:
     async def connect(self) -> bool:
         """Authenticate with Garmin Connect, using cached tokens if available."""
         try:
-            from garminconnect import Garmin
+            from garminconnect import Garmin, GarminConnectAuthenticationError
 
             GARMIN_TOKEN_PATH.mkdir(parents=True, exist_ok=True)
+            token_str = str(GARMIN_TOKEN_PATH)
 
-            # Try cached tokens first — avoids SSO entirely
-            token_file = GARMIN_TOKEN_PATH / "oauth2_token.json"
-            if token_file.exists():
+            # Try loading cached tokens first
+            if any(GARMIN_TOKEN_PATH.glob("*.json")):
                 try:
                     client = Garmin()
-                    client.garth.load(str(GARMIN_TOKEN_PATH))
-                    client.get_user_summary(datetime.today().strftime("%Y-%m-%d"))
+                    client.login(token_str)
                     self._client = client
-                    logger.info("Resumed cached Garmin session from %s", GARMIN_TOKEN_PATH)
+                    logger.info("Resumed cached Garmin session from %s", token_str)
                     return True
                 except Exception as e:
-                    logger.info("Cached tokens invalid (%s), will try fresh login", e)
+                    logger.info("Cached tokens invalid (%s), trying fresh login", e)
 
-            # Fresh SSO login — may hit rate limits if tried too often
-            logger.info("Attempting fresh Garmin login (may fail if rate-limited)")
-            client = Garmin(email=self.email, password=self.password)
-            client.login()
-            client.garth.dump(str(GARMIN_TOKEN_PATH))
+            # Fresh login
+            logger.info("Attempting fresh Garmin login")
+            client = Garmin(email=self.email, password=self.password,
+                           is_cn=False, return_on_mfa=True)
+            result = client.login()
+
+            # Handle MFA if required
+            if isinstance(result, tuple) and result[0] == "needs_mfa":
+                logger.error(
+                    "Garmin requires MFA code. Cannot complete login automatically. "
+                    "Please generate tokens manually — see DOCS.md for instructions."
+                )
+                return False
+
+            client.garth.dump(token_str)
             self._client = client
-            logger.info("Logged in to Garmin, tokens saved to %s (valid ~1 year)", GARMIN_TOKEN_PATH)
+            logger.info("Logged in to Garmin Connect, tokens saved to %s", token_str)
             return True
 
         except Exception as e:
             if "429" in str(e):
                 logger.error(
-                    "Garmin login rate-limited (429). Wait 24-48 hours, or manually "
-                    "generate tokens on your PC and copy to %s. "
-                    "See DOCS.md for instructions.", GARMIN_TOKEN_PATH
+                    "Garmin rate-limited (429). Wait 24-48h or generate tokens manually. "
+                    "See DOCS.md for instructions."
                 )
             else:
                 logger.error("Garmin Connect login failed: %s", e)
@@ -79,7 +86,7 @@ class GarminService:
             return str(workout_id)
         except Exception as e:
             logger.error("Failed to export workout to Garmin: %s", e)
-            # Clear tokens so next attempt tries fresh login
+            # Clear cached tokens so next attempt tries fresh login
             import shutil
             shutil.rmtree(str(GARMIN_TOKEN_PATH), ignore_errors=True)
             return None
@@ -124,22 +131,17 @@ class GarminService:
                 if repeats > 1:
                     repeat_steps = []
                     work_step = self._make_step(
-                        step_order=1,
-                        step_type="interval",
-                        duration_type="time",
-                        duration_value=duration_s,
+                        step_order=1, step_type="interval",
+                        duration_type="time", duration_value=duration_s,
                         target_type="power.zone" if power_low else "no.target",
-                        target_low=power_low,
-                        target_high=power_high,
+                        target_low=power_low, target_high=power_high,
                     )
                     repeat_steps.append(work_step)
                     rest_s = interval.get("rest_seconds", 0)
                     if rest_s > 0:
                         rest_step = self._make_step(
-                            step_order=2,
-                            step_type="recovery",
-                            duration_type="time",
-                            duration_value=rest_s,
+                            step_order=2, step_type="recovery",
+                            duration_type="time", duration_value=rest_s,
                             target_type="no.target",
                         )
                         repeat_steps.append(rest_step)
@@ -153,11 +155,9 @@ class GarminService:
                     step = self._make_step(
                         step_order=step_order,
                         step_type="interval" if itype == "work" else "recovery",
-                        duration_type="time",
-                        duration_value=duration_s,
+                        duration_type="time", duration_value=duration_s,
                         target_type="power.zone" if power_low else "no.target",
-                        target_low=power_low,
-                        target_high=power_high,
+                        target_low=power_low, target_high=power_high,
                     )
                     steps.append(step)
                 step_order += 1
