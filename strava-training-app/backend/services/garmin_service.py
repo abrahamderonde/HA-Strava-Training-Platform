@@ -27,8 +27,10 @@ class GarminService:
             GARMIN_TOKEN_PATH.mkdir(parents=True, exist_ok=True)
             token_str = str(GARMIN_TOKEN_PATH)
 
-            # Try loading cached tokens first
-            if any(GARMIN_TOKEN_PATH.glob("*.json")):
+            # Try loading cached tokens first — new format (0.3.0+) uses garmin_tokens.json
+            token_file_new = GARMIN_TOKEN_PATH / "garmin_tokens.json"
+            has_tokens = token_file_new.exists() or any(GARMIN_TOKEN_PATH.glob("*.json"))
+            if has_tokens:
                 try:
                     client = Garmin()
                     client.login(token_str)
@@ -37,6 +39,9 @@ class GarminService:
                     return True
                 except Exception as e:
                     logger.info("Cached tokens invalid (%s), trying fresh login", e)
+                    # Clean up stale tokens so fresh login proceeds
+                    for f in GARMIN_TOKEN_PATH.glob("*.json"):
+                        f.unlink(missing_ok=True)
 
             # Fresh login
             logger.info("Attempting fresh Garmin login")

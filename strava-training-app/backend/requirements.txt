@@ -11,7 +11,7 @@ python-multipart==0.0.9
 pydantic==2.7.1
 pydantic-settings==2.3.0
 shapely==2.0.4
-garminconnect>=0.2.8
+garminconnect @ git+https://github.com/cyberjunky/python-garminconnect.git@master
 anthropic==0.28.0
 apscheduler==3.10.4
 python-dateutil==2.9.0
