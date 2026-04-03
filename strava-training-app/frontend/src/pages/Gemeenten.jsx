@@ -241,4 +241,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
 
       <style>{spinStyle}</style>
     </div>
+  </div>
+  )
 }
