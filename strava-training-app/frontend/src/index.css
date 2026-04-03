@@ -385,3 +385,7 @@ body {
 @media (max-width: 1100px) {
   .section-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Spin animation ── */
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

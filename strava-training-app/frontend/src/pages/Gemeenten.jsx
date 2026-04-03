@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Map, MapPin, RefreshCw } from 'lucide-react'
+import { MapPin, RefreshCw } from 'lucide-react'
 
-const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }'
+export default function Gemeenten() {
   const mapRef = useRef(null)
   const leafletMap = useRef(null)
   const geoLayer = useRef(null)
@@ -12,7 +12,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
   const [scanning, setScanning] = useState(false)
   const [mapReady, setMapReady] = useState(false)
   const [highlightYear, setHighlightYear] = useState('all')
-  const [showRecent, setShowRecent] = useState(true)
 
   useEffect(() => {
     if (window.L) { setMapReady(true); return }
@@ -39,7 +38,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
     setLoading(false)
   }
 
-  // Init map
   useEffect(() => {
     if (!mapReady || !mapRef.current || leafletMap.current) return
     const L = window.L
@@ -49,7 +47,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
     ).addTo(leafletMap.current)
   }, [mapReady])
 
-  // Re-render layer when data or highlight year changes
   useEffect(() => {
     if (!mapReady || !leafletMap.current) return
     loadGemeenteLayer()
@@ -65,7 +62,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
       const visitedMap = {}
       for (const v of visited) visitedMap[v.code] = v
 
-      // Determine which codes are "highlighted" based on filter
       const highlighted = new Set()
       for (const v of visited) {
         if (highlightYear === 'all') {
@@ -87,7 +83,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
             return { fillColor: '#f97316', fillOpacity: 0.8, color: '#fb923c', weight: 1.5 }
           }
           if (visitedAll.has(code) && highlightYear !== 'all') {
-            // Visited but not in selected year — show muted
             return { fillColor: '#f97316', fillOpacity: 0.25, color: '#f97316', weight: 0.5 }
           }
           return { fillColor: '#1e2533', fillOpacity: 0.55, color: '#2d3748', weight: 0.5 }
@@ -97,23 +92,21 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
           const code = props.statcode || props.gemeentecode || props.code || ''
           const name = props.statnaam || props.gemeentenaam || props.naam || code
           const v = visitedMap[code]
-          const year = v?.first_visit ? new Date(v.first_visit).getFullYear() : null
-
+          const year = v && v.first_visit ? new Date(v.first_visit).getFullYear() : null
+          const visitedColor = '#f97316'
+          const mutedColor = '#6b7280'
+          const visitedText = v
+            ? '<span style="color:' + visitedColor + '">Visited ' + (year || '') + '</span>'
+            : '<span style="color:' + mutedColor + '">Not yet visited</span>'
           layer.bindTooltip(
-            `<div style="font-family:sans-serif;font-size:13px">
-              <strong>${name}</strong><br/>
-              ${v
-                ? `<span style="color:#f97316">✓ First visited ${year || ''}</span>`
-                : '<span style="color:#6b7280">Not yet visited</span>'}
-            </div>`,
+            '<div style="font-family:sans-serif;font-size:13px"><strong>' + name + '</strong><br/>' + visitedText + '</div>',
             { sticky: true }
           )
-          layer.on('mouseover', () => layer.setStyle({ fillOpacity: highlighted.has(code) ? 1 : 0.8, weight: 2 }))
+          layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.95, weight: 2 }))
           layer.on('mouseout', () => {
-            layer.setStyle({
-              fillOpacity: highlighted.has(code) ? 0.8 : visitedAll.has(code) && highlightYear !== 'all' ? 0.25 : 0.55,
-              weight: highlighted.has(code) ? 1.5 : 0.5
-            })
+            if (highlighted.has(code)) layer.setStyle({ fillOpacity: 0.8, weight: 1.5 })
+            else if (visitedAll.has(code)) layer.setStyle({ fillOpacity: 0.25, weight: 0.5 })
+            else layer.setStyle({ fillOpacity: 0.55, weight: 0.5 })
           })
         }
       }).addTo(leafletMap.current)
@@ -128,10 +121,10 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
     setTimeout(async () => { await fetchData(); setScanning(false) }, 3000)
   }
 
-  // Available years from visited data
-  const years = [...new Set(visited.map(v => v.first_visit ? new Date(v.first_visit).getFullYear() : null).filter(Boolean))].sort()
+  const years = [...new Set(
+    visited.map(v => v.first_visit ? new Date(v.first_visit).getFullYear() : null).filter(Boolean)
+  )].sort()
 
-  // Visited in selected year / recently
   const recentVisited = [...visited]
     .filter(v => {
       if (highlightYear === 'all') return true
@@ -139,17 +132,14 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
     })
     .sort((a, b) => (b.first_visit || '').localeCompare(a.first_visit || ''))
 
-  const highlightCount = highlightYear === 'all'
-    ? stats?.visited_count || 0
-    : recentVisited.length
+  const highlightCount = highlightYear === 'all' ? (stats ? stats.visited_count : 0) : recentVisited.length
 
   return (
     <div>
-      {/* Header */}
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           <h1 className="page-title">Long Term NL Challenge</h1>
-          <p className="page-subtitle">Dutch municipalities visited by cycling · inspired by Frank van Moorsel</p>
+          <p className="page-subtitle">Dutch municipalities visited by cycling</p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={triggerScan} disabled={scanning}>
           <RefreshCw size={14} className={scanning ? 'spin' : ''} />
@@ -157,9 +147,7 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
         </button>
       </div>
 
-      {/* Stats + filters row */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        {/* Stats tiles */}
         {stats && (
           <div className="stat-grid" style={{ flex: '1 1 300px', marginBottom: 0 }}>
             <div className="stat-tile">
@@ -172,7 +160,7 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
               <div className="stat-value">{stats.percentage}<span className="stat-unit">%</span></div>
             </div>
             <div className="stat-tile">
-              <div className="stat-label">{highlightYear === 'all' ? 'Remaining' : `In ${highlightYear}`}</div>
+              <div className="stat-label">{highlightYear === 'all' ? 'Remaining' : 'In ' + highlightYear}</div>
               <div className="stat-value" style={{ color: highlightYear !== 'all' ? 'var(--accent2)' : 'var(--text)' }}>
                 {highlightYear === 'all' ? stats.total_count - stats.visited_count : highlightCount}
               </div>
@@ -180,7 +168,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
           </div>
         )}
 
-        {/* Year filter */}
         <div className="card" style={{ flex: '1 1 200px', padding: '12px 16px' }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Highlight year</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -204,9 +191,7 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
         </div>
       </div>
 
-      {/* Map + list side by side */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, minHeight: 520 }}>
-        {/* Map */}
         <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)', minHeight: 520, position: 'relative' }}>
           <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 520 }} />
           {!mapReady && (
@@ -216,10 +201,9 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
           )}
         </div>
 
-        {/* Recently visited list */}
         <div className="card" style={{ overflowY: 'auto', maxHeight: 520, padding: '14px 16px' }}>
           <div className="card-title" style={{ marginBottom: 10 }}>
-            {highlightYear === 'all' ? 'Recently visited' : `Visited in ${highlightYear}`}
+            {highlightYear === 'all' ? 'Recently visited' : 'Visited in ' + highlightYear}
             <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 6 }}>({recentVisited.length})</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -238,8 +222,6 @@ const spinStyle = '.spin { animation: spin 1s linear infinite; } @keyframes spin
           </div>
         </div>
       </div>
-
-      <style>{spinStyle}</style>
     </div>
   </div>
   )
