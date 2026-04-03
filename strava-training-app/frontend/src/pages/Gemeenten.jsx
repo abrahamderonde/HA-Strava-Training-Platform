@@ -223,6 +223,5 @@ export default function Gemeenten() {
         </div>
       </div>
     </div>
-  </div>
   )
 }
