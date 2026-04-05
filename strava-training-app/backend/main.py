@@ -665,7 +665,47 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
     return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
 
 
-@app.get("/trainiq/analytics/pmc-all")
+@app.get("/trainiq/debug/power-stats")
+async def power_stats(db: AsyncSession = Depends(get_db)):
+    """Debug: diagnose why power curve might be empty."""
+    cutoff_60 = datetime.now() - timedelta(days=60)
+
+    # All cycling activities in last 60 days
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.sport_type.in_(["Ride", "VirtualRide", "EBikeRide", "GravelRide"]))
+        .where(Activity.start_date >= cutoff_60)
+        .where(Activity.synthetic == False)
+        .order_by(Activity.start_date.desc())
+    )
+    recent = result.scalars().all()
+
+    # Power curve entries
+    pc_result = await db.execute(select(PowerCurve).order_by(PowerCurve.duration_seconds))
+    pc_entries = pc_result.scalars().all()
+
+    return {
+        "rides_last_60d": len(recent),
+        "rides_with_has_power_true": sum(1 for a in recent if a.has_power),
+        "rides_with_power_stream": sum(1 for a in recent if a.power_stream),
+        "rides_with_tss": sum(1 for a in recent if a.tss),
+        "power_curve_entries": len(pc_entries),
+        "power_curve_sample": [{"duration": p.duration_seconds, "power": p.best_power} for p in pc_entries[:5]],
+        "recent_rides": [
+            {
+                "date": a.start_date.date().isoformat(),
+                "name": a.name,
+                "has_power": a.has_power,
+                "has_stream": bool(a.power_stream),
+                "stream_len": len(a.power_stream) if a.power_stream else 0,
+                "avg_watts": a.average_watts,
+            }
+            for a in recent[:10]
+        ],
+    }
+
+
+
 async def get_pmc_all(db: AsyncSession = Depends(get_db)):
     """Return all PMC history for year-over-year comparison."""
     result = await db.execute(
