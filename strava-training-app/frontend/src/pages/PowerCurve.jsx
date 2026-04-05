@@ -56,21 +56,35 @@ export default function PowerCurve() {
   const [weight, setWeight] = useState(70)
 
   useEffect(() => {
-    Promise.all([
-      fetch('/trainiq/analytics/power-curve').then(r => r.json()),
-      fetch('/trainiq/analytics/ftp').then(r => r.json()),
-      fetch('/trainiq/analytics/zones').then(r => r.json()),
-    ]).then(([curveData, ftpData, zonesData]) => {
-      const enriched = curveData.map(d => ({
-        ...d,
-        wpkg: (d.power / weight).toFixed(2),
-        label: formatDuration(d.duration),
-      }))
-      setCurve(enriched)
-      setFtp(ftpData)
-      setZones(zonesData.zones || [])
+    const load = async () => {
+      try {
+        const curveRes = await fetch('/trainiq/analytics/power-curve')
+        const curveData = curveRes.ok ? await curveRes.json() : []
+        const rawCurve = Array.isArray(curveData) ? curveData : []
+        const enriched = rawCurve.map(d => ({
+          ...d,
+          wpkg: weight > 0 ? (d.power / weight).toFixed(2) : 0,
+          label: formatDuration(d.duration),
+        }))
+        setCurve(enriched)
+      } catch (e) { console.error('power-curve fetch:', e) }
+
+      try {
+        const ftpRes = await fetch('/trainiq/analytics/ftp')
+        if (ftpRes.ok) setFtp(await ftpRes.json())
+      } catch (e) { console.error('ftp fetch:', e) }
+
+      try {
+        const zonesRes = await fetch('/trainiq/analytics/zones')
+        if (zonesRes.ok) {
+          const z = await zonesRes.json()
+          setZones(z.zones || [])
+        }
+      } catch (e) { console.error('zones fetch:', e) }
+
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }
+    load()
   }, [weight])
 
   const currentFtp = ftp?.ftp || 0
@@ -188,7 +202,17 @@ export default function PowerCurve() {
       ) : curve.length === 0 ? (
         <div className="empty-state">
           <p>No power data available yet.</p>
-          <p style={{ marginTop: 8 }}>Import Strava activities with a power meter to see your curve.</p>
+          <p style={{ marginTop: 8, fontSize: 13 }}>
+            Power data exists in the database — try clicking Recalculate on the Dashboard,
+            or check the browser console for errors.
+          </p>
+          <button className="btn btn-primary" style={{ marginTop: 16 }}
+            onClick={async () => {
+              await fetch('/trainiq/analytics/recalculate', { method: 'POST' })
+              setTimeout(() => window.location.reload(), 3000)
+            }}>
+            Recalculate Power Curve
+          </button>
         </div>
       ) : (
         <div className="card">
