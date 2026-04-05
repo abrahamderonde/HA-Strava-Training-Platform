@@ -395,6 +395,7 @@ async def tss_stats(db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/debug/latlng-stats")
 async def latlng_stats(db: AsyncSession = Depends(get_db)):
     """Debug: check how many cycling activities have latlng data."""
     from sqlalchemy import func, case
@@ -721,8 +722,8 @@ async def power_stats(db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/analytics/pmc-all")
 async def get_pmc_all(db: AsyncSession = Depends(get_db)):
-    """Return all PMC history for year-over-year comparison."""
     result = await db.execute(
         select(TrainingMetrics).order_by(TrainingMetrics.date)
     )
