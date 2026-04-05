@@ -778,6 +778,7 @@ async def get_distance_by_year(
 
 
 
+@app.get("/trainiq/analytics/ftp")
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
