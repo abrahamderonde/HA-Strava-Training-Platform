@@ -667,10 +667,9 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
 
 @app.get("/trainiq/debug/power-stats")
 async def power_stats(db: AsyncSession = Depends(get_db)):
-    """Debug: diagnose why power curve might be empty."""
+    """Debug: diagnose power curve and synthetic commute data."""
     cutoff_60 = datetime.now() - timedelta(days=60)
 
-    # All cycling activities in last 60 days
     result = await db.execute(
         select(Activity)
         .where(Activity.sport_type.in_(["Ride", "VirtualRide", "EBikeRide", "GravelRide"]))
@@ -680,27 +679,43 @@ async def power_stats(db: AsyncSession = Depends(get_db)):
     )
     recent = result.scalars().all()
 
-    # Power curve entries
     pc_result = await db.execute(select(PowerCurve).order_by(PowerCurve.duration_seconds))
     pc_entries = pc_result.scalars().all()
+
+    # Check synthetic commutes
+    syn_result = await db.execute(
+        select(Activity).where(Activity.synthetic == True).order_by(Activity.start_date.desc())
+    )
+    syn_acts = syn_result.scalars().all()
+
+    # Check for negative strava_id activities (old format)
+    neg_result = await db.execute(
+        select(Activity).where(Activity.strava_id < 0)
+    )
+    neg_acts = neg_result.scalars().all()
+
+    # Check for null strava_id activities
+    null_result = await db.execute(
+        select(Activity).where(Activity.strava_id == None)
+    )
+    null_acts = null_result.scalars().all()
 
     return {
         "rides_last_60d": len(recent),
         "rides_with_has_power_true": sum(1 for a in recent if a.has_power),
         "rides_with_power_stream": sum(1 for a in recent if a.power_stream),
-        "rides_with_tss": sum(1 for a in recent if a.tss),
         "power_curve_entries": len(pc_entries),
         "power_curve_sample": [{"duration": p.duration_seconds, "power": p.best_power} for p in pc_entries[:5]],
-        "recent_rides": [
-            {
-                "date": a.start_date.date().isoformat(),
-                "name": a.name,
-                "has_power": a.has_power,
-                "has_stream": bool(a.power_stream),
-                "stream_len": len(a.power_stream) if a.power_stream else 0,
-                "avg_watts": a.average_watts,
-            }
-            for a in recent[:10]
+        "synthetic_count": len(syn_acts),
+        "negative_strava_id_count": len(neg_acts),
+        "null_strava_id_count": len(null_acts),
+        "synthetic_sample": [
+            {"date": a.start_date.isoformat(), "name": a.name, "tss": a.tss, "strava_id": a.strava_id, "synthetic": a.synthetic}
+            for a in syn_acts[:5]
+        ],
+        "negative_id_sample": [
+            {"date": a.start_date.isoformat(), "name": a.name, "strava_id": a.strava_id, "synthetic": a.synthetic}
+            for a in neg_acts[:5]
         ],
     }
 
