@@ -28,84 +28,70 @@ class IntervalsService:
 
     def _workout_to_description(self, workout) -> str:
         """
-        Convert a PlannedWorkout to intervals.icu description language.
-        Format: "- Xm Y% Description"
-        Power percentages are relative to FTP.
+        Convert a PlannedWorkout to intervals.icu workout description language.
+        Uses watts directly (e.g. "- 12m 250-280W") or % if no power data.
         """
         lines = []
         intervals = workout.intervals or []
 
         if not intervals:
-            # Simple duration workout
             duration_min = workout.target_duration_minutes or 60
-            if_ = workout.target_if or 0.65
-            pct = round(if_ * 100)
+            pct = round((workout.target_if or 0.65) * 100)
             lines.append(f"- {duration_min}m {pct}%")
         else:
             for interval in intervals:
-                itype = interval.get("type", "work")
-                duration_s = interval.get("duration_seconds", 300)
-                duration_min = duration_s / 60
-                dur_str = f"{int(duration_min)}m" if duration_min >= 1 else f"{duration_s}s"
-                repeats = interval.get("repeats", 1)
-                rest_s = interval.get("rest_seconds", 0)
-                power_low = interval.get("power_low")
-                power_high = interval.get("power_high")
-                ftp = workout.target_if and workout.target_if * 100 or 100
+                itype    = interval.get("type", "work")
+                dur_s    = interval.get("duration_seconds", 300)
+                repeats  = interval.get("repeats", 1)
+                rest_s   = interval.get("rest_seconds", 0)
+                p_low    = interval.get("power_low")
+                p_high   = interval.get("power_high")
 
-                # Use midpoint power as percentage of FTP
-                # We store actual watts, need to convert back to %
-                # target_if on workout gives us reference FTP
-                if power_low and power_high:
-                    mid_watts = (power_low + power_high) / 2
-                    # Approximate FTP from the workout's target_if
-                    # We'll store the pct directly from interval data if available
-                    pct = interval.get("power_pct") or round(mid_watts)
-                elif power_low:
-                    pct = interval.get("power_pct") or round(power_low)
+                # Format duration
+                dur_min = dur_s / 60
+                dur_str = f"{int(dur_min)}m" if dur_min >= 1 else f"{dur_s}s"
+
+                # Format power target — use watts if available, else % by type
+                if p_low and p_high and p_low != p_high:
+                    power_str = f"{int(p_low)}-{int(p_high)}W"
+                elif p_low:
+                    power_str = f"{int(p_low)}W"
                 else:
-                    # Map intensity type to typical percentages
                     pct_map = {"warmup": 55, "cooldown": 55, "recovery": 50,
                                "work": 85, "threshold": 95, "vo2max": 115}
-                    pct = pct_map.get(itype, 70)
+                    power_str = f"{pct_map.get(itype, 70)}%"
+
+                # Format rest
+                if rest_s > 0:
+                    rest_min = rest_s / 60
+                    rest_str = f"{int(rest_min)}m" if rest_min >= 1 else f"{rest_s}s"
 
                 if repeats > 1:
                     lines.append(f"{repeats}x")
-                    lines.append(f"- {dur_str} {pct}%")
+                    lines.append(f"- {dur_str} {power_str}")
                     if rest_s > 0:
-                        rest_min = rest_s / 60
-                        rest_str = f"{int(rest_min)}m" if rest_min >= 1 else f"{rest_s}s"
                         lines.append(f"- {rest_str} 50%")
                 else:
-                    lines.append(f"- {dur_str} {pct}%")
+                    lines.append(f"- {dur_str} {power_str}")
 
         return "\n".join(lines)
 
     async def push_workout(self, workout, ftp: float = None) -> Optional[str]:
         """
-        Push a single workout to intervals.icu calendar.
-        Returns the intervals.icu event ID on success.
-        Uses base64-encoded FIT file for best structured workout support.
+        Push a single workout to intervals.icu calendar using description language.
+        intervals.icu parses this natively and syncs structured steps to Garmin.
         """
-        from .fit_export import generate_workout_fit
-        import base64
-
-        try:
-            fit_bytes = generate_workout_fit(workout)
-            fit_b64 = base64.b64encode(fit_bytes).decode('utf-8')
-        except Exception as e:
-            logger.warning("FIT generation failed, falling back to description: %s", e)
-            fit_b64 = None
-
         workout_date = workout.date if isinstance(workout.date, datetime) else datetime.combine(workout.date, datetime.min.time())
         start_local = workout_date.strftime("%Y-%m-%dT00:00:00")
+
+        description = self._workout_to_description(workout)
 
         event = {
             "category": "WORKOUT",
             "start_date_local": start_local,
             "type": "Ride",
             "name": workout.title,
-            "description": workout.description or "",
+            "description": description,
             "moving_time": (workout.target_duration_minutes or 60) * 60,
             "target": "POWER",
             "external_id": f"trainiq_{workout.id}",
@@ -113,12 +99,6 @@ class IntervalsService:
 
         if workout.target_tss:
             event["icu_training_load"] = workout.target_tss
-
-        if fit_b64:
-            event["filename"] = f"{workout.title.replace(' ', '_')[:30]}.fit"
-            event["file_contents_base64"] = fit_b64
-        else:
-            event["description"] = self._workout_to_description(workout)
 
         try:
             async with httpx.AsyncClient() as client:
