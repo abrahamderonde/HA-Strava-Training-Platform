@@ -1106,6 +1106,7 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
             target_duration_minutes=wo.get("target_duration_minutes"),
             target_if=wo.get("target_if"),
             intervals=wo.get("intervals"),
+            icu_description=wo.get("icu_description"),
             goal_id=goal.id,
         )
         db.add(workout)

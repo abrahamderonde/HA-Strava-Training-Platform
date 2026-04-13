@@ -84,7 +84,8 @@ class IntervalsService:
         workout_date = workout.date if isinstance(workout.date, datetime) else datetime.combine(workout.date, datetime.min.time())
         start_local = workout_date.strftime("%Y-%m-%dT00:00:00")
 
-        description = self._workout_to_description(workout)
+        # Use AI-generated icu_description if available, otherwise build from intervals
+        description = getattr(workout, 'icu_description', None) or self._workout_to_description(workout)
 
         event = {
             "category": "WORKOUT",

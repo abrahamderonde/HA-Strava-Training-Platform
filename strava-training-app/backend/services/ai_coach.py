@@ -41,6 +41,7 @@ WORKOUT_SCHEMA = """
       "date": "YYYY-MM-DD",
       "title": "Workout title",
       "description": "Detailed description with specific intervals, power targets, cadence cues, race-inspired elements",
+      "icu_description": "intervals.icu description language — e.g.:\\n- 15m 55%\\n3x\\n- 8m 252-290W\\n- 4m 50%\\n- 10m 55%",
       "workout_type": "endurance|threshold|vo2max|recovery|race",
       "target_tss": 75,
       "target_duration_minutes": 90,
@@ -236,6 +237,23 @@ Respond ONLY with valid JSON:
 - Write descriptions as a coach talking to an athlete — specific, energetic, concrete
 - Example of good style: "3 sets of 12min sweetspot intervals. Every 4 minutes, throw in a 20sec punch at 120% FTP — stand up and attack it like you're going for the city limit sprint. Recover fully between sets."
 - Include specific watt targets, cadence targets, and vivid cues in descriptions
+
+## icu_description field (IMPORTANT)
+This field must be valid intervals.icu description language that EXACTLY matches the workout structure described in "description". Rules:
+- Use "- Xm Y-ZW" for a step with watt range (e.g. "- 12m 250-290W")
+- Use "- Xm Y%" for a step as FTP percentage (e.g. "- 15m 55%")
+- Use "- Xs Y-ZW" for steps under 1 minute (e.g. "- 30s 440-500W")
+- Use "Nx" on its own line before repeated steps (e.g. "3x")
+- Indent repeated steps with "- " after the Nx line
+- For nested surges within intervals, list each surge as its own step within the repeat block
+- Example for "3x 8min climbing with 15sec surges every 90sec":
+  3x
+  - 90s 252-290W
+  - 15s 320-340W
+  - 90s 252-290W
+  - 15s 320-340W
+  ... (repeat pattern to fill 8min)
+  - 4m 50%
 
 Respond ONLY with valid JSON:
 {WORKOUT_SCHEMA}"""

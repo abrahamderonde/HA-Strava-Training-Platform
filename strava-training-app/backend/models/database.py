@@ -29,6 +29,7 @@ async def init_db():
             "ALTER TABLE activities ADD COLUMN commute BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN trainer BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN synthetic BOOLEAN DEFAULT 0",
+            "ALTER TABLE planned_workouts ADD COLUMN icu_description TEXT",
         ]
         for sql in migrations:
             try:
@@ -127,6 +128,7 @@ class PlannedWorkout(Base):
     target_duration_minutes = Column(Integer, nullable=True)
     target_if = Column(Float, nullable=True)  # intensity factor
     intervals = Column(JSON, nullable=True)   # structured interval data
+    icu_description = Column(Text, nullable=True)  # intervals.icu description language
     garmin_workout_id = Column(String, nullable=True)
     exported_to_garmin = Column(Boolean, default=False)
     goal_id = Column(Integer, nullable=True)
