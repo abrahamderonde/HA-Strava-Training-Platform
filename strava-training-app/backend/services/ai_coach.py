@@ -243,17 +243,22 @@ This field must be valid intervals.icu description language that EXACTLY matches
 - Use "- Xm Y-ZW" for a step with watt range (e.g. "- 12m 250-290W")
 - Use "- Xm Y%" for a step as FTP percentage (e.g. "- 15m 55%")
 - Use "- Xs Y-ZW" for steps under 1 minute (e.g. "- 30s 440-500W")
-- Use "Nx" on its own line before repeated steps (e.g. "3x")
-- Indent repeated steps with "- " after the Nx line
-- For nested surges within intervals, list each surge as its own step within the repeat block
-- Example for "3x 8min climbing with 15sec surges every 90sec":
-  3x
-  - 90s 252-290W
+- "Nx" on its own line means: repeat ALL the following "- " lines N times as one block
+- The repeat block ends when there are no more indented "- " lines or a new non-indented line appears
+- CRITICAL: if a set contains multiple sub-steps (e.g. 4x climbing with surges every 2min = 8 sub-steps per set), ALL sub-steps must be listed inside the repeat block
+- Example for "4x 8min climbing with 15sec surge every 2min, 4min rest between sets":
+  4x
+  - 2m 252-290W
   - 15s 320-340W
-  - 90s 252-290W
+  - 2m 252-290W
   - 15s 320-340W
-  ... (repeat pattern to fill 8min)
+  - 2m 252-290W
+  - 15s 320-340W
+  - 2m 252-290W
+  - 15s 320-340W
   - 4m 50%
+- Do NOT use nested Nx blocks — flatten all repeats into explicit steps
+- The total time of all steps must equal target_duration_minutes
 
 Respond ONLY with valid JSON:
 {WORKOUT_SCHEMA}"""
