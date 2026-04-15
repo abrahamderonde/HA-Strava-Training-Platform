@@ -78,21 +78,31 @@ class IntervalsService:
 
     async def push_workout(self, workout, ftp: float = None) -> Optional[str]:
         """
-        Push a single workout to intervals.icu calendar using description language.
-        intervals.icu parses this natively and syncs structured steps to Garmin.
+        Push a workout to intervals.icu as a base64-encoded FIT file.
+        intervals.icu parses the FIT structure and syncs intervals to Garmin.
         """
+        from .fit_export import generate_workout_fit
+        import base64
+
         workout_date = workout.date if isinstance(workout.date, datetime) else datetime.combine(workout.date, datetime.min.time())
         start_local = workout_date.strftime("%Y-%m-%dT00:00:00")
+        filename = f"{workout.title.replace(' ', '_')[:30]}.fit"
 
-        # Use AI-generated icu_description if available, otherwise build from intervals
-        description = getattr(workout, 'icu_description', None) or self._workout_to_description(workout)
+        try:
+            fit_bytes = generate_workout_fit(workout)
+            fit_b64 = base64.b64encode(fit_bytes).decode('utf-8')
+        except Exception as e:
+            logger.error("FIT generation failed: %s", e)
+            return None
 
         event = {
             "category": "WORKOUT",
             "start_date_local": start_local,
             "type": "Ride",
             "name": workout.title,
-            "description": description,
+            "description": workout.description or "",
+            "filename": filename,
+            "file_contents_base64": fit_b64,
             "moving_time": (workout.target_duration_minutes or 60) * 60,
             "target": "POWER",
             "external_id": f"trainiq_{workout.id}",
