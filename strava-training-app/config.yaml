@@ -1,6 +1,6 @@
 name: "Strava Training Platform"
 description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
-version: "0.1.67"
+version: "0.1.68"
 slug: "strava_training"
 init: false
 arch:
@@ -23,6 +23,8 @@ options:
   garmin_email: ""
   garmin_password: ""
   anthropic_api_key: ""
+  intervals_api_key: ""
+  intervals_athlete_id: ""
   athlete_weight_kg: 70
   ftp_initial: 200
 schema:
@@ -31,6 +33,8 @@ schema:
   garmin_email: str
   garmin_password: str
   anthropic_api_key: str
+  intervals_api_key: str
+  intervals_athlete_id: str
   athlete_weight_kg: int
   ftp_initial: int
 panel_icon: mdi:bike-fast
