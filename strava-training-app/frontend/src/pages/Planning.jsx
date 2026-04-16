@@ -156,17 +156,6 @@ export default function Planning() {
     }
   }
 
-  const exportToIntervals = async (workoutId) => {
-    setStatus('Pushing to intervals.icu...')
-    const res = await fetch(`/trainiq/planning/export-to-intervals/${workoutId}`, { method: 'POST' })
-    if (res.ok) {
-      setStatus('Pushed to intervals.icu — will sync to Garmin on next device sync')
-    } else {
-      const err = await res.json().catch(() => ({}))
-      setStatus(`intervals.icu export failed: ${err.detail || 'check log'}`)
-    }
-  }
-
   const exportToGarmin = async (workoutId) => {
     setStatus('Exporting to Garmin...')
     const res = await fetch(`/trainiq/planning/export-to-garmin/${workoutId}`, { method: 'POST' })
@@ -431,19 +420,13 @@ export default function Planning() {
                         </div>
                         <a href={`/trainiq/planning/download-fit/${w.id}`} download
                           style={{ textDecoration: 'none' }}>
-                          <button className="btn btn-ghost btn-sm" title="Download FIT file">
+                          <button className="btn btn-ghost btn-sm" title="Download FIT file for manual Garmin import">
                             <Download size={13} />
                             .fit
                           </button>
                         </a>
-                        <button className="btn btn-ghost btn-sm" title="Push to intervals.icu → Garmin"
-                          style={{ color: '#f97316' }}
-                          onClick={() => exportToIntervals(w.id)}>
-                          <Zap size={13} />
-                          icu
-                        </button>
                         <button className="btn btn-ghost btn-sm" onClick={() => exportToGarmin(w.id)}
-                          title="Export direct to Garmin Connect" disabled={w.exported_to_garmin}>
+                          title="Export to Garmin Connect" disabled={w.exported_to_garmin}>
                           <Download size={13} />
                           {w.exported_to_garmin ? 'Exported' : 'Garmin'}
                         </button>

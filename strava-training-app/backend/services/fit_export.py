@@ -1,11 +1,9 @@
 """
 Generate Garmin FIT files for structured workouts.
-FIT (Flexible and Interoperable Data Transfer) — Garmin's binary format.
+FIT (Flexible and Interoperable Data Transfer) is Garmin's binary format.
+We generate workout FIT files that can be imported into Garmin Connect.
 
-Key references:
-- Message numbers: FIT SDK profile.xlsx
-- Duration type 0 = "time" (value in seconds)
-- Target type 6 = "power" (value = zone, or 0 for custom low/high in watts)
+Reference: https://developer.garmin.com/fit/protocol/
 """
 import struct
 import logging
@@ -14,219 +12,247 @@ from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-FIT_EPOCH = 631065600  # Unix epoch - FIT epoch (Dec 31, 1989)
+# FIT protocol constants
+FIT_EPOCH = 631065600  # seconds between Unix epoch and FIT epoch (Dec 31, 1989)
+ENDIAN = '<'  # little-endian
 
-# FIT global message numbers
-MESG_FILE_ID      = 0
-MESG_WORKOUT      = 26
-MESG_WORKOUT_STEP = 27
+# FIT message numbers
+MESG_FILE_ID = 0
+MESG_WORKOUT = 190
+MESG_WORKOUT_STEP = 196
 
 # FIT base types
-ENUM    = 0x00
-UINT8   = 0x02
-UINT16  = 0x84
-UINT32  = 0x86
-STRING  = 0x07
+BASE_ENUM = 0x00
+BASE_UINT8 = 0x02
+BASE_UINT16 = 0x84
+BASE_UINT32 = 0x86
+BASE_STRING = 0x07
+BASE_UINT32Z = 0x8C
 
-# Duration types
-DURATION_TIME = 0   # fixed time, value in seconds
-DURATION_OPEN = 3   # lap button press
+# Sport types
+SPORT_CYCLING = 2
 
-# Target types
-TARGET_POWER = 6    # power (custom low/high in watts)
-TARGET_OPEN  = 0    # no target
+# Workout step duration types
+DURATION_TIME = 0          # fixed time
+DURATION_OPEN = 3          # open / until button press
 
-# Intensity
-ACTIVE   = 0
-REST     = 1
-WARMUP   = 2
-COOLDOWN = 3
+# Workout step target types  
+TARGET_POWER = 6           # power zone target
+TARGET_OPEN = 0            # no target
 
-# Sport
-CYCLING = 2
+# Workout step intensity
+INTENSITY_ACTIVE = 0
+INTENSITY_REST = 1
+INTENSITY_WARMUP = 2
+INTENSITY_COOLDOWN = 3
 
 
-def fit_time(dt: datetime) -> int:
+def to_fit_time(dt: datetime) -> int:
+    """Convert datetime to FIT timestamp."""
     return int(dt.timestamp()) - FIT_EPOCH
 
 
 def crc16(data: bytes, crc: int = 0) -> int:
-    table = [
+    """Calculate FIT CRC-16."""
+    crc_table = [
         0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
         0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400,
     ]
     for byte in data:
-        tmp = table[crc & 0xF]; crc = (crc >> 4) & 0x0FFF; crc ^= tmp ^ table[byte & 0xF]
-        tmp = table[crc & 0xF]; crc = (crc >> 4) & 0x0FFF; crc ^= tmp ^ table[(byte >> 4) & 0xF]
+        tmp = crc_table[crc & 0xF]
+        crc = (crc >> 4) & 0x0FFF
+        crc ^= tmp ^ crc_table[byte & 0xF]
+        tmp = crc_table[crc & 0xF]
+        crc = (crc >> 4) & 0x0FFF
+        crc ^= tmp ^ crc_table[(byte >> 4) & 0xF]
     return crc
 
 
-def encode_string(value: str, size: int) -> bytes:
-    """Encode a string to exactly `size` bytes, null-terminated and null-padded."""
-    encoded = (value or '').encode('utf-8')[:size - 1]  # leave room for null
-    return encoded + b'\x00' * (size - len(encoded))    # pad to exact size
+class FitWriter:
+    """Builds a FIT file byte by byte."""
 
+    def __init__(self):
+        self.records = bytearray()
+        self.definitions = {}  # local_mesg_num -> field list
 
-def write_definition(local_num: int, global_num: int, fields: List[tuple]) -> bytes:
-    """
-    Build a FIT definition message.
-    fields: list of (field_def_num, size_bytes, base_type)
-    """
-    buf = bytearray()
-    buf.append(0x40 | (local_num & 0x0F))  # definition header
-    buf.append(0)                            # reserved
-    buf.append(0)                            # little-endian
-    buf += struct.pack('<H', global_num)
-    buf.append(len(fields))
-    for fnum, fsize, ftype in fields:
-        buf.append(fnum)
-        buf.append(fsize)
-        buf.append(ftype)
-    return bytes(buf)
+    def _write_definition(self, local_num: int, global_mesg_num: int, fields: List[tuple]) -> bytes:
+        """Write a definition message. fields = [(field_def_num, size, base_type)]"""
+        data = bytearray()
+        data.append(0x40 | local_num)  # definition message header
+        data.append(0)                  # reserved
+        data.append(0)                  # little endian architecture
+        data += struct.pack('<H', global_mesg_num)
+        data.append(len(fields))
+        for field_def_num, size, base_type in fields:
+            data.append(field_def_num)
+            data.append(size)
+            data.append(base_type)
+        self.definitions[local_num] = fields
+        return bytes(data)
 
+    def _write_data(self, local_num: int, values: List) -> bytes:
+        """Write a data message."""
+        fields = self.definitions[local_num]
+        data = bytearray()
+        data.append(local_num)  # data message header
+        for (field_def_num, size, base_type), value in zip(fields, values):
+            if base_type == BASE_STRING:
+                encoded = (value or '').encode('utf-8')[:size-1] + b'\x00'
+                encoded = encoded.ljust(size, b'\x00')
+                data += encoded
+            elif size == 1:
+                data.append(value if value is not None else 0xFF)
+            elif size == 2:
+                data += struct.pack('<H', value if value is not None else 0xFFFF)
+            elif size == 4:
+                data += struct.pack('<I', value if value is not None else 0xFFFFFFFF)
+        return bytes(data)
 
-def write_data(local_num: int, fields: List[tuple], values: List) -> bytes:
-    """
-    Build a FIT data message.
-    fields: same list as write_definition
-    values: list of values in same order
-    """
-    buf = bytearray()
-    buf.append(local_num & 0x0F)  # data header
-    for (fnum, fsize, ftype), value in zip(fields, values):
-        if ftype == STRING:
-            buf += encode_string(str(value) if value else '', fsize)
-        elif fsize == 1:
-            v = value if value is not None else 0xFF
-            buf.append(int(v) & 0xFF)
-        elif fsize == 2:
-            v = value if value is not None else 0xFFFF
-            buf += struct.pack('<H', int(v) & 0xFFFF)
-        elif fsize == 4:
-            v = value if value is not None else 0xFFFFFFFF
-            buf += struct.pack('<I', int(v) & 0xFFFFFFFF)
-    return bytes(buf)
+    def add(self, definition: bytes, data: bytes):
+        self.records += definition
+        self.records += data
 
+    def build(self) -> bytes:
+        """Assemble the complete FIT file with header and CRC."""
+        data_size = len(self.records)
 
-def build_fit(records: bytearray) -> bytes:
-    """Wrap records in FIT file header + CRC."""
-    data_size = len(records)
-    hdr = bytearray()
-    hdr.append(14)                          # header size
-    hdr.append(0x10)                        # protocol version 1.0
-    hdr += struct.pack('<H', 2132)          # profile version
-    hdr += struct.pack('<I', data_size)
-    hdr += b'.FIT'
-    hdr += struct.pack('<H', crc16(bytes(hdr)))
-    return bytes(hdr) + bytes(records) + struct.pack('<H', crc16(bytes(records)))
+        # File header (14 bytes)
+        header = bytearray()
+        header.append(14)          # header size
+        header.append(0x10)        # protocol version
+        header += struct.pack('<H', 2132)  # profile version
+        header += struct.pack('<I', data_size)
+        header += b'.FIT'
+        header_crc = crc16(bytes(header))
+        header += struct.pack('<H', header_crc)
+
+        body = bytes(header) + bytes(self.records)
+        body_crc = crc16(bytes(self.records))
+        return body + struct.pack('<H', body_crc)
 
 
 def generate_workout_fit(workout) -> bytes:
-    """Generate a valid FIT workout file from a PlannedWorkout."""
-    records = bytearray()
-    now = fit_time(datetime.now())
-    name = (workout.title or 'Workout')[:16]
+    """
+    Generate a FIT file for a PlannedWorkout.
+    Returns raw bytes of the .fit file.
+    """
+    writer = FitWriter()
+    now_fit = to_fit_time(datetime.now())
+    workout_name = (workout.title or 'Workout')[:16]  # FIT string field limit
+
+    # ── file_id message (local 0) ──────────────────────────────────────────
+    defn = writer._write_definition(0, MESG_FILE_ID, [
+        (0, 2, BASE_UINT16),   # type (value 5 = workout)
+        (1, 4, BASE_UINT32Z),  # manufacturer (0 = development)
+        (2, 4, BASE_UINT32Z),  # product
+        (4, 4, BASE_UINT32),   # time_created
+        (5, 4, BASE_UINT32Z),  # serial_number
+    ])
+    data = writer._write_data(0, [5, 0, 0, now_fit, 0])
+    writer.add(defn, data)
+
+    # ── workout message (local 1) ──────────────────────────────────────────
     intervals = workout.intervals or []
     num_steps = _count_steps(intervals)
 
-    # ── file_id (local 0) ─────────────────────────────────────────────────
-    FILE_ID_FIELDS = [
-        (0, 1, ENUM),    # type: 5 = workout
-        (1, 2, UINT16),  # manufacturer: 255 = development
-        (2, 2, UINT16),  # product
-        (4, 4, UINT32),  # time_created
-    ]
-    records += write_definition(0, MESG_FILE_ID, FILE_ID_FIELDS)
-    records += write_data(0, FILE_ID_FIELDS, [5, 255, 0, now])
+    defn = writer._write_definition(1, MESG_WORKOUT, [
+        (4, 1, BASE_ENUM),     # sport
+        (5, 2, BASE_UINT16),   # num_valid_steps
+        (8, 16, BASE_STRING),  # wkt_name (max 16 chars)
+    ])
+    data = writer._write_data(1, [SPORT_CYCLING, num_steps, workout_name])
+    writer.add(defn, data)
 
-    # ── workout (local 1) ─────────────────────────────────────────────────
-    WORKOUT_FIELDS = [
-        (4, 1,  ENUM),    # sport: 2 = cycling
-        (5, 2,  UINT16),  # num_valid_steps
-        (8, 16, STRING),  # wkt_name
-    ]
-    records += write_definition(1, MESG_WORKOUT, WORKOUT_FIELDS)
-    records += write_data(1, WORKOUT_FIELDS, [CYCLING, num_steps, name])
+    # ── workout_step messages (local 2) ────────────────────────────────────
+    defn = writer._write_definition(2, MESG_WORKOUT_STEP, [
+        (0, 2, BASE_UINT16),   # message_index
+        (1, 16, BASE_STRING),  # wkt_step_name
+        (2, 1, BASE_ENUM),     # duration_type
+        (3, 4, BASE_UINT32),   # duration_value (ms for time)
+        (4, 1, BASE_ENUM),     # target_type
+        (5, 4, BASE_UINT32),   # target_value
+        (6, 4, BASE_UINT32),   # custom_target_value_low (watts)
+        (7, 4, BASE_UINT32),   # custom_target_value_high (watts)
+        (11, 1, BASE_ENUM),    # intensity
+    ])
 
-    # ── workout_step (local 2) ────────────────────────────────────────────
-    STEP_FIELDS = [
-        (0,  2,  UINT16),  # message_index
-        (1,  16, STRING),  # wkt_step_name
-        (2,  1,  ENUM),    # duration_type
-        (3,  4,  UINT32),  # duration_value (seconds for DURATION_TIME)
-        (4,  1,  ENUM),    # target_type
-        (5,  4,  UINT32),  # target_value (0 for custom power)
-        (6,  4,  UINT32),  # custom_target_value_low  (watts)
-        (7,  4,  UINT32),  # custom_target_value_high (watts)
-        (11, 1,  ENUM),    # intensity
-    ]
-    records += write_definition(2, MESG_WORKOUT_STEP, STEP_FIELDS)
-
+    step_index = 0
     if not intervals:
+        # Simple single-step workout
         duration_s = (workout.target_duration_minutes or 60) * 60
-        records += write_data(2, STEP_FIELDS, [
-            0, 'Ride',
-            DURATION_TIME, duration_s,
+        data = writer._write_data(2, [
+            step_index, 'Ride',
+            DURATION_TIME, duration_s * 1000,
             TARGET_OPEN, 0, 0, 0,
-            ACTIVE,
+            INTENSITY_ACTIVE,
         ])
+        writer.add(defn, data)
     else:
-        idx = 0
         for interval in intervals:
-            for step in _interval_to_steps(interval, idx):
-                records += write_data(2, STEP_FIELDS, [
+            steps = _interval_to_steps(interval, step_index)
+            for step in steps:
+                data = writer._write_data(2, [
                     step['index'], step['name'],
                     step['duration_type'], step['duration_value'],
                     step['target_type'], step['target_value'],
                     step['target_low'], step['target_high'],
                     step['intensity'],
                 ])
-                idx = step['index'] + 1
+                writer.add(defn, data)
+                step_index = step['index'] + 1
 
-    return build_fit(records)
+    return writer.build()
 
 
 def _count_steps(intervals: List[Dict]) -> int:
+    """Count total workout steps including repeats."""
     if not intervals:
         return 1
     count = 0
-    for iv in intervals:
-        reps = iv.get('repeats', 1)
-        has_rest = iv.get('rest_seconds', 0) > 0
-        count += reps * (2 if has_rest else 1)
+    for interval in intervals:
+        repeats = interval.get('repeats', 1)
+        has_rest = interval.get('rest_seconds', 0) > 0
+        if repeats > 1:
+            count += repeats * (2 if has_rest else 1)
+        else:
+            count += 1
     return count
 
 
 def _interval_to_steps(interval: Dict, start_index: int) -> List[Dict]:
-    itype      = interval.get('type', 'work')
-    duration_s = int(interval.get('duration_seconds', 300))
-    repeats    = int(interval.get('repeats', 1))
-    rest_s     = int(interval.get('rest_seconds', 0))
-    power_low  = interval.get('power_low')
+    """Convert an interval definition to FIT workout steps."""
+    steps = []
+    itype = interval.get('type', 'work')
+    duration_s = interval.get('duration_seconds', 300)
+    repeats = interval.get('repeats', 1)
+    rest_s = interval.get('rest_seconds', 0)
+    power_low = interval.get('power_low')
     power_high = interval.get('power_high')
 
-    has_power  = power_low is not None and power_high is not None
-    t_type     = TARGET_POWER if has_power else TARGET_OPEN
-    t_low      = int(power_low)  if power_low  else 0
-    t_high     = int(power_high) if power_high else 0
+    has_target = power_low is not None
+    target_type = TARGET_POWER if has_target else TARGET_OPEN
+    target_value = 0
+    t_low = int(power_low) if power_low else 0
+    t_high = int(power_high) if power_high else 0
 
     intensity_map = {
-        'work': ACTIVE, 'recovery': REST,
-        'warmup': WARMUP, 'cooldown': COOLDOWN,
+        'work': INTENSITY_ACTIVE,
+        'recovery': INTENSITY_REST,
+        'warmup': INTENSITY_WARMUP,
+        'cooldown': INTENSITY_COOLDOWN,
     }
-    intensity = intensity_map.get(itype, ACTIVE)
+    intensity = intensity_map.get(itype, INTENSITY_ACTIVE)
 
-    steps = []
     idx = start_index
     for rep in range(repeats):
-        step_name = f'Int {rep+1}/{repeats}' if repeats > 1 else itype.capitalize()
+        name = f'Interval {rep+1}' if repeats > 1 else itype.capitalize()
         steps.append({
             'index': idx,
-            'name': step_name[:16],
+            'name': name[:16],
             'duration_type': DURATION_TIME,
-            'duration_value': duration_s,   # seconds — NOT milliseconds
-            'target_type': t_type,
-            'target_value': 0,              # 0 = use custom low/high
+            'duration_value': duration_s * 1000,  # milliseconds
+            'target_type': target_type,
+            'target_value': target_value,
             'target_low': t_low,
             'target_high': t_high,
             'intensity': intensity,
@@ -238,12 +264,12 @@ def _interval_to_steps(interval: Dict, start_index: int) -> List[Dict]:
                 'index': idx,
                 'name': 'Rest',
                 'duration_type': DURATION_TIME,
-                'duration_value': rest_s,
+                'duration_value': rest_s * 1000,
                 'target_type': TARGET_OPEN,
                 'target_value': 0,
                 'target_low': 0,
                 'target_high': 0,
-                'intensity': REST,
+                'intensity': INTENSITY_REST,
             })
             idx += 1
 
