@@ -110,7 +110,6 @@ def generate_workout_fit(workout) -> bytes:
 
     # ── workout_step ──────────────────────────────────────────────────────
     F2 = [
-        (0,  2, UINT16),  # message_index
         (1,  16, STRING), # wkt_step_name
         (2,  1, ENUM),    # duration_type  (0 = time, value in seconds)
         (3,  4, UINT32),  # duration_value (seconds)
@@ -124,13 +123,13 @@ def generate_workout_fit(workout) -> bytes:
 
     if not intervals:
         dur = (workout.target_duration_minutes or 60) * 60
-        rec += _data(2, F2, [0,'Ride',DURATION_TIME,dur,TARGET_OPEN,0,0,0,INTENSITY_ACTIVE])
+        rec += _data(2, F2, ['Ride',DURATION_TIME,dur,TARGET_OPEN,0,0,0,INTENSITY_ACTIVE])
     else:
         idx = 0
         for iv in intervals:
             for step in _expand(iv, idx):
                 rec += _data(2, F2, [
-                    step['idx'], step['name'],
+                    step['name'],
                     DURATION_TIME, step['dur'],
                     step['ttype'], 0,
                     step['tlow'], step['thigh'],
