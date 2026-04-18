@@ -25,6 +25,8 @@ from .models.database import (
 )
 from .services.strava_service import StravaService
 from .services.garmin_service import GarminService
+from .services.intervals_service import IntervalsService
+from .services.intervals_service import IntervalsService
 from .services.ai_coach import AICoachService
 from .services.training_science import (
     calculate_pmc, fit_critical_power, build_power_curve,
@@ -48,6 +50,8 @@ def load_config():
         "garmin_email": os.getenv("GARMIN_EMAIL", ""),
         "garmin_password": os.getenv("GARMIN_PASSWORD", ""),
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+        "intervals_api_key": os.getenv("INTERVALS_API_KEY", ""),
+        "intervals_athlete_id": os.getenv("INTERVALS_ATHLETE_ID", ""),
         "athlete_weight_kg": int(os.getenv("ATHLETE_WEIGHT_KG", "70")),
         "ftp_initial": int(os.getenv("FTP_INITIAL", "200")),
     }
@@ -221,6 +225,8 @@ async def get_settings():
         "strava_configured": bool(CONFIG.get("strava_client_id")),
         "garmin_configured": bool(CONFIG.get("garmin_email")),
         "anthropic_configured": bool(CONFIG.get("anthropic_api_key")),
+        "intervals_configured": bool(CONFIG.get("intervals_api_key") and CONFIG.get("intervals_athlete_id")),
+        "intervals_configured": bool(CONFIG.get("intervals_icu_api_key")),
     }
 
 
@@ -363,6 +369,7 @@ async def recalculate_all_tss(background_tasks: BackgroundTasks):
 
 
 
+@app.get("/trainiq/debug/tss-stats")
 async def tss_stats(db: AsyncSession = Depends(get_db)):
     """Debug: show TSS distribution to diagnose CTL discrepancy."""
     from sqlalchemy import func
@@ -389,6 +396,7 @@ async def tss_stats(db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/debug/latlng-stats")
 async def latlng_stats(db: AsyncSession = Depends(get_db)):
     """Debug: check how many cycling activities have latlng data."""
     from sqlalchemy import func, case
@@ -411,6 +419,136 @@ async def latlng_stats(db: AsyncSession = Depends(get_db)):
 
 
 
+
+
+@app.post("/trainiq/commutes/preview")
+async def preview_synthetic_commutes(request: Request, db: AsyncSession = Depends(get_db)):
+    """Preview how many synthetic commute activities would be created."""
+    data = await request.json()
+    start_date = datetime.fromisoformat(data["start_date"])
+    end_date = datetime.fromisoformat(data["end_date"])
+    days_of_week = data.get("days_of_week", [0, 1, 2, 3])
+    rides_per_day = data.get("rides_per_day", 2)
+    duration_minutes = data.get("duration_minutes", 20)
+    intensity_factor = data.get("intensity_factor", 0.65)
+
+    ftp = await get_current_ftp(db)
+    tss_per_ride = round((duration_minutes / 60) * (intensity_factor ** 2) * 100, 1)
+    tss_per_day = tss_per_ride * rides_per_day
+
+    days = []
+    current = start_date
+    while current <= end_date:
+        if current.weekday() in days_of_week:
+            days.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+
+    return {
+        "total_days": len(days),
+        "total_rides": len(days) * rides_per_day,
+        "tss_per_ride": tss_per_ride,
+        "tss_per_day": tss_per_day,
+        "total_tss": round(len(days) * tss_per_day, 1),
+        "ftp_used": round(ftp, 1),
+        "sample_days": days[:5],
+    }
+
+
+@app.post("/trainiq/commutes/generate")
+async def generate_synthetic_commutes(request: Request, db: AsyncSession = Depends(get_db)):
+    """Generate synthetic commute activities for historical backfill."""
+    data = await request.json()
+    start_date = datetime.fromisoformat(data["start_date"])
+    end_date = datetime.fromisoformat(data["end_date"])
+    days_of_week = data.get("days_of_week", [0, 1, 2, 3])
+    rides_per_day = data.get("rides_per_day", 2)
+    duration_minutes = data.get("duration_minutes", 20)
+    intensity_factor = data.get("intensity_factor", 0.65)
+
+    ftp = await get_current_ftp(db)
+    duration_seconds = duration_minutes * 60
+    tss = round((duration_minutes / 60) * (intensity_factor ** 2) * 100, 1)
+    distance_m = (duration_minutes / 60) * 15000  # assume 15 km/h
+
+    # Use a large negative synthetic ID base to avoid conflicts
+    # Find current min synthetic ID
+    result = await db.execute(
+        select(Activity.strava_id)
+        .where(Activity.synthetic == True)
+        .where(Activity.strava_id != None)
+        .order_by(Activity.strava_id)
+        .limit(1)
+    )
+    min_existing = result.scalar_one_or_none()
+    next_id = min(min_existing or -1, -1) - 1
+
+    created = 0
+    current = start_date
+    while current <= end_date:
+        if current.weekday() in days_of_week:
+            for ride_num in range(rides_per_day):
+                hour = 8 if ride_num == 0 else 17
+                ride_time = current.replace(hour=hour, minute=0, second=0)
+                name = "Morning commute (estimated)" if ride_num == 0 else "Afternoon commute (estimated)"
+                activity = Activity(
+                    strava_id=next_id,  # negative unique ID
+                    name=name,
+                    sport_type="Ride",
+                    start_date=ride_time,
+                    elapsed_time=duration_seconds,
+                    moving_time=duration_seconds,
+                    distance=distance_m,
+                    total_elevation_gain=0,
+                    average_speed=distance_m / duration_seconds,
+                    max_speed=distance_m / duration_seconds,
+                    has_power=False,
+                    tss=tss,
+                    np=None,
+                    if_=intensity_factor,
+                    commute=True,
+                    synthetic=True,
+                )
+                db.add(activity)
+                next_id -= 1
+                created += 1
+        current += timedelta(days=1)
+
+    await db.commit()
+    logger.info("Generated %d synthetic commute activities", created)
+    await recalculate_pmc(db)
+    logger.info("PMC rebuilt after commute generation")
+    total_tss = round(created * tss, 1)
+    return {"created": created, "total_tss": total_tss, "tss_per_ride": tss}
+
+
+@app.delete("/trainiq/commutes/synthetic")
+async def delete_synthetic_commutes(db: AsyncSession = Depends(get_db)):
+    """Delete all synthetic commute activities and rebuild PMC."""
+    result = await db.execute(
+        select(Activity).where(Activity.synthetic == True)
+    )
+    acts = result.scalars().all()
+    # Also catch any with NULL strava_id that were created before the fix
+    result2 = await db.execute(
+        select(Activity).where(Activity.strava_id == None)
+    )
+    null_acts = result2.scalars().all()
+    all_acts = {a.id: a for a in acts + null_acts}
+    count = len(all_acts)
+    for act in all_acts.values():
+        await db.delete(act)
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"deleted": count}
+
+
+@app.get("/trainiq/commutes/synthetic/count")
+async def count_synthetic_commutes(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Activity).where(Activity.synthetic == True))
+    return {"count": len(result.scalars().all())}
+
+
+@app.post("/trainiq/strava/backfill-latlng")
 async def backfill_latlng(background_tasks: BackgroundTasks):
     """Re-fetch latlng streams for cycling activities that are missing GPS data."""
     async def _backfill():
@@ -528,6 +666,134 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
     )
     rows = result.scalars().all()
     return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
+
+
+@app.get("/trainiq/debug/power-stats")
+async def power_stats(db: AsyncSession = Depends(get_db)):
+    """Debug: diagnose power curve and synthetic commute data."""
+    cutoff_60 = datetime.now() - timedelta(days=60)
+
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.sport_type.in_(["Ride", "VirtualRide", "EBikeRide", "GravelRide"]))
+        .where(Activity.start_date >= cutoff_60)
+        .where(Activity.synthetic == False)
+        .order_by(Activity.start_date.desc())
+    )
+    recent = result.scalars().all()
+
+    pc_result = await db.execute(select(PowerCurve).order_by(PowerCurve.duration_seconds))
+    pc_entries = pc_result.scalars().all()
+
+    # Check synthetic commutes
+    syn_result = await db.execute(
+        select(Activity).where(Activity.synthetic == True).order_by(Activity.start_date.desc())
+    )
+    syn_acts = syn_result.scalars().all()
+
+    # Check for negative strava_id activities (old format)
+    neg_result = await db.execute(
+        select(Activity).where(Activity.strava_id < 0)
+    )
+    neg_acts = neg_result.scalars().all()
+
+    # Check for null strava_id activities
+    null_result = await db.execute(
+        select(Activity).where(Activity.strava_id == None)
+    )
+    null_acts = null_result.scalars().all()
+
+    return {
+        "rides_last_60d": len(recent),
+        "rides_with_has_power_true": sum(1 for a in recent if a.has_power),
+        "rides_with_power_stream": sum(1 for a in recent if a.power_stream),
+        "power_curve_entries": len(pc_entries),
+        "power_curve_sample": [{"duration": p.duration_seconds, "power": p.best_power} for p in pc_entries[:5]],
+        "synthetic_count": len(syn_acts),
+        "negative_strava_id_count": len(neg_acts),
+        "null_strava_id_count": len(null_acts),
+        "synthetic_sample": [
+            {"date": a.start_date.isoformat(), "name": a.name, "tss": a.tss, "strava_id": a.strava_id, "synthetic": a.synthetic}
+            for a in syn_acts[:5]
+        ],
+        "negative_id_sample": [
+            {"date": a.start_date.isoformat(), "name": a.name, "strava_id": a.strava_id, "synthetic": a.synthetic}
+            for a in neg_acts[:5]
+        ],
+    }
+
+
+
+@app.get("/trainiq/analytics/pmc-all")
+async def get_pmc_all(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(TrainingMetrics).order_by(TrainingMetrics.date)
+    )
+    metrics = result.scalars().all()
+    return [
+        {
+            "date": m.date.isoformat(),
+            "ctl": round(m.ctl, 1) if m.ctl else 0,
+            "atl": round(m.atl, 1) if m.atl else 0,
+            "tsb": round(m.tsb, 1) if m.tsb else 0,
+            "tss": round(m.daily_tss, 1) if m.daily_tss else 0,
+        }
+        for m in metrics
+    ]
+
+
+@app.get("/trainiq/analytics/distance-by-year")
+async def get_distance_by_year(
+    exclude_commutes: bool = False,
+    exclude_indoor: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return weekly distance per year for multi-year comparison charts."""
+    query = select(
+        Activity.start_date,
+        Activity.distance,
+        Activity.sport_type,
+        Activity.commute,
+        Activity.trainer,
+        Activity.synthetic,
+    ).where(
+        Activity.sport_type.in_(["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"])
+    ).where(Activity.distance > 0)
+
+    if exclude_commutes:
+        query = query.where(Activity.commute == False)
+    if exclude_indoor:
+        query = query.where(Activity.sport_type != "VirtualRide")
+        query = query.where(Activity.trainer == False)
+
+    # Always exclude synthetic
+    query = query.where(Activity.synthetic == False)
+
+    result = await db.execute(query.order_by(Activity.start_date))
+    rows = result.all()
+
+    # Group by year and ISO week number → {year: {week: km}}
+    from collections import defaultdict
+    year_week = defaultdict(lambda: defaultdict(float))
+    for row in rows:
+        dt = row.start_date
+        year = dt.year
+        # Day of year 1-365
+        doy = dt.timetuple().tm_yday
+        year_week[year][doy] += (row.distance or 0) / 1000
+
+    # Return as {year: [{doy, km}]}
+    years = {}
+    for year, doys in sorted(year_week.items()):
+        # Aggregate into weekly buckets (week 1-52)
+        weekly = defaultdict(float)
+        for doy, km in doys.items():
+            week = min(52, (doy - 1) // 7 + 1)
+            weekly[week] += km
+        years[str(year)] = [{"week": w, "km": round(km, 1)} for w, km in sorted(weekly.items())]
+
+    return years
+
 
 
 @app.get("/trainiq/analytics/ftp")
@@ -842,6 +1108,7 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
             target_duration_minutes=wo.get("target_duration_minutes"),
             target_if=wo.get("target_if"),
             intervals=wo.get("intervals"),
+            icu_description=wo.get("icu_description"),
             goal_id=goal.id,
         )
         db.add(workout)
@@ -853,6 +1120,71 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
     return plan
 
 
+
+
+@app.post("/trainiq/planning/push-to-intervals/{workout_id}")
+async def push_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Push a planned workout to intervals.icu (which syncs to Garmin automatically)."""
+    from .services.fit_export import generate_workout_fit
+    api_key = CONFIG.get("intervals_icu_api_key", "")
+    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="intervals.icu API key not configured in app settings")
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    # Generate FIT file for accurate structured workout
+    try:
+        fit_bytes = generate_workout_fit(workout)
+    except Exception as e:
+        logger.warning("FIT generation failed, using description format: %s", e)
+        fit_bytes = None
+    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
+    event_id = await svc.push_workout(workout, fit_bytes=fit_bytes)
+    if not event_id:
+        raise HTTPException(status_code=500, detail="Failed to push to intervals.icu — check log")
+    return {"status": "pushed", "intervals_event_id": event_id}
+
+
+@app.get("/trainiq/planning/intervals-test")
+async def test_intervals_connection():
+    """Test intervals.icu API credentials."""
+    api_key = CONFIG.get("intervals_icu_api_key", "")
+    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
+    if not api_key:
+        return {"ok": False, "error": "Not configured — add intervals_icu_api_key in app settings"}
+    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
+    ok = await svc.verify_connection()
+    return {"ok": ok, "athlete_id": athlete_id}
+
+
+@app.post("/trainiq/planning/export-to-intervals/{workout_id}")
+async def export_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Export a planned workout to intervals.icu (which then syncs to Garmin Connect)."""
+    from .services.intervals_service import IntervalsService
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
+        raise HTTPException(status_code=400, detail="intervals.icu API key and athlete ID not configured")
+    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
+    ftp = await get_current_ftp(db)
+    event_id = await svc.push_workout(workout, ftp=ftp)
+    if event_id:
+        return {"status": "exported", "intervals_event_id": event_id}
+    raise HTTPException(status_code=500, detail="Failed to push workout to intervals.icu — check log")
+
+
+@app.get("/trainiq/intervals/verify")
+async def verify_intervals():
+    """Verify intervals.icu credentials."""
+    from .services.intervals_service import IntervalsService
+    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
+        return {"ok": False, "error": "Not configured"}
+    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
+    return await svc.verify_connection()
 
 
 @app.get("/trainiq/planning/download-fit/{workout_id}")
@@ -878,6 +1210,7 @@ async def download_fit(workout_id: int, db: AsyncSession = Depends(get_db)):
 
 
 
+@app.post("/trainiq/planning/export-to-garmin/{workout_id}")
 async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Export a planned workout to Garmin Connect."""
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
