@@ -1125,7 +1125,7 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 @app.post("/trainiq/planning/push-to-intervals/{workout_id}")
 async def push_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Push a planned workout to intervals.icu (which syncs to Garmin automatically)."""
-    from .services.fit_export import generate_workout_fit
+    from .services.fit_writer import generate_workout_fit
     api_key = CONFIG.get("intervals_icu_api_key", "")
     athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
     if not api_key:
@@ -1191,7 +1191,7 @@ async def verify_intervals():
 async def download_fit(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Download a workout as a Garmin FIT file for manual import."""
     from fastapi.responses import Response
-    from .services.fit_export import generate_workout_fit
+    from .services.fit_writer import generate_workout_fit
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
     workout = result.scalar_one_or_none()
     if not workout:

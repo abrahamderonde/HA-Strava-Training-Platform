@@ -28,8 +28,8 @@ class IntervalsService:
 
     def _workout_to_description(self, workout) -> str:
         """
-        Convert a PlannedWorkout to intervals.icu workout description language.
-        Uses watts directly (e.g. "- 12m 250-280W") or % if no power data.
+        Convert a PlannedWorkout to intervals.icu description language.
+        Expands all repeats explicitly to avoid Nx grouping ambiguity.
         """
         lines = []
         intervals = workout.intervals or []
@@ -42,16 +42,17 @@ class IntervalsService:
             for interval in intervals:
                 itype    = interval.get("type", "work")
                 dur_s    = interval.get("duration_seconds", 300)
-                repeats  = interval.get("repeats", 1)
-                rest_s   = interval.get("rest_seconds", 0)
+                repeats  = int(interval.get("repeats", 1))
+                rest_s   = int(interval.get("rest_seconds", 0))
                 p_low    = interval.get("power_low")
                 p_high   = interval.get("power_high")
 
-                # Format duration
                 dur_min = dur_s / 60
-                dur_str = f"{int(dur_min)}m" if dur_min >= 1 else f"{dur_s}s"
+                if dur_min >= 1:
+                    dur_str = f"{int(dur_min)}m" if dur_min == int(dur_min) else f"{dur_min:.1f}m"
+                else:
+                    dur_str = f"{dur_s}s"
 
-                # Format power target — use watts if available, else % by type
                 if p_low and p_high and p_low != p_high:
                     power_str = f"{int(p_low)}-{int(p_high)}W"
                 elif p_low:
@@ -61,18 +62,15 @@ class IntervalsService:
                                "work": 85, "threshold": 95, "vo2max": 115}
                     power_str = f"{pct_map.get(itype, 70)}%"
 
-                # Format rest
                 if rest_s > 0:
                     rest_min = rest_s / 60
                     rest_str = f"{int(rest_min)}m" if rest_min >= 1 else f"{rest_s}s"
 
-                if repeats > 1:
-                    lines.append(f"{repeats}x")
+                # Expand repeats explicitly — no Nx syntax
+                for rep in range(repeats):
                     lines.append(f"- {dur_str} {power_str}")
                     if rest_s > 0:
                         lines.append(f"- {rest_str} 50%")
-                else:
-                    lines.append(f"- {dur_str} {power_str}")
 
         return "\n".join(lines)
 
