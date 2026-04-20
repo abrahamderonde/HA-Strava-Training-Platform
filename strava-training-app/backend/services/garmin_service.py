@@ -32,15 +32,23 @@ class GarminService:
             GARMIN_TOKEN_PATH.mkdir(parents=True, exist_ok=True)
             token_str = str(GARMIN_TOKEN_PATH)
 
+            # Log what's in the token directory
+            files = list(GARMIN_TOKEN_PATH.iterdir()) if GARMIN_TOKEN_PATH.exists() else []
+            logger.info("Garmin token path: %s, files: %s", token_str, [f.name for f in files])
+
             # Try loading saved tokens first (0.3.x auto-renews via refresh token)
-            try:
-                client = Garmin()
-                client.login(token_str)
-                self._client = client
-                logger.info("Resumed Garmin session from %s", token_str)
-                return True
-            except (GarminConnectAuthenticationError, GarminConnectConnectionError, FileNotFoundError):
-                logger.info("No valid tokens, attempting fresh login")
+            if files:
+                try:
+                    client = Garmin()
+                    client.login(token_str)
+                    self._client = client
+                    logger.info("Resumed Garmin session from %s", token_str)
+                    return True
+                except (GarminConnectAuthenticationError, GarminConnectConnectionError, FileNotFoundError) as e:
+                    logger.warning("Cached tokens invalid (%s), will try fresh login", e)
+            else:
+                logger.warning("No token files found at %s — cannot login without tokens", token_str)
+                return False
 
             # Fresh login
             client = Garmin(

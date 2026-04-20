@@ -668,7 +668,34 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
     return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
 
 
-@app.get("/trainiq/debug/power-stats")
+@app.get("/trainiq/debug/garmin-tokens")
+async def debug_garmin_tokens():
+    """Debug: check what Garmin token files exist on disk."""
+    from pathlib import Path
+    token_path = Path("/data/strava_training/garmin_tokens")
+    if not token_path.exists():
+        return {"status": "directory_missing", "path": str(token_path), "files": []}
+    files = list(token_path.iterdir())
+    file_info = []
+    for f in files:
+        info = {"name": f.name, "size_bytes": f.stat().st_size}
+        if f.suffix == ".json":
+            try:
+                import json
+                data = json.loads(f.read_text())
+                # Show keys but not the actual token values
+                info["keys"] = list(data.keys()) if isinstance(data, dict) else "not_a_dict"
+            except Exception as e:
+                info["parse_error"] = str(e)
+        file_info.append(info)
+    return {
+        "status": "ok" if files else "empty",
+        "path": str(token_path),
+        "files": file_info,
+    }
+
+
+
 async def power_stats(db: AsyncSession = Depends(get_db)):
     """Debug: diagnose power curve and synthetic commute data."""
     cutoff_60 = datetime.now() - timedelta(days=60)
