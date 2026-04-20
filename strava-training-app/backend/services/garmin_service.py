@@ -10,7 +10,7 @@ from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 
-GARMIN_TOKEN_PATH = Path("/data/strava_training/garmin_tokens")
+GARMIN_TOKEN_PATH = Path("/config/strava_training/garmin_tokens")
 
 
 class GarminService:
