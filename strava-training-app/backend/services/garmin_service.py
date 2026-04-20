@@ -7,6 +7,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict
+from garminconnect.models import CyclingWorkout
+
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,6 @@ class GarminService:
         try:
             garmin_workout = self._build_garmin_workout(workout)
     
-            # python-garminconnect >= 0.3.2 supports this natively
             response = self._client.upload_cycling_workout(garmin_workout)
     
             workout_id = response.get("workoutId")
@@ -88,13 +89,18 @@ class GarminService:
             return None
 
 
-    def _build_garmin_workout(self, workout) -> Dict:
+
+    def _build_garmin_workout(self, workout) -> CyclingWorkout:
         steps = []
         step_order = 1
         intervals = workout.intervals or []
+    
         if not intervals:
-            steps.append(self._make_step(step_order, "interval", "time",
-                                          (workout.target_duration_minutes or 60)*60, "no.target"))
+            steps.append(self._make_step(
+                step_order, "interval", "time",
+                (workout.target_duration_minutes or 60) * 60,
+                "no.target"
+            ))
         else:
             for interval in intervals:
                 itype = interval.get("type", "work")
@@ -102,26 +108,42 @@ class GarminService:
                 repeats = interval.get("repeats", 1)
                 power_low = interval.get("power_low")
                 power_high = interval.get("power_high")
+    
                 for rep in range(repeats):
                     steps.append(self._make_step(
-                        step_order, "interval" if itype == "work" else "recovery",
-                        "time", duration_s,
+                        step_order,
+                        "interval" if itype == "work" else "recovery",
+                        "time",
+                        duration_s,
                         "power.zone" if power_low else "no.target",
-                        power_low, power_high,
+                        power_low,
+                        power_high,
                     ))
                     step_order += 1
+    
                     if interval.get("rest_seconds", 0) > 0:
-                        steps.append(self._make_step(step_order, "recovery", "time",
-                                                      interval["rest_seconds"], "no.target"))
+                        steps.append(self._make_step(
+                            step_order,
+                            "recovery",
+                            "time",
+                            interval["rest_seconds"],
+                            "no.target"
+                        ))
                         step_order += 1
-        return {
+    
+        workout_json = {
             "workoutName": workout.title,
             "description": workout.description or "",
             "sportType": {"sportTypeKey": "cycling"},
-            "workoutSegments": [{"segmentOrder": 1,
-                                  "sportType": {"sportTypeKey": "cycling"},
-                                  "workoutSteps": steps}],
+            "workoutSegments": [{
+                "segmentOrder": 1,
+                "sportType": {"sportTypeKey": "cycling"},
+                "workoutSteps": steps
+            }],
         }
+    
+        return CyclingWorkout.from_json(workout_json)
+
 
     def _make_step(self, order, step_type, duration_type, duration_value,
                    target_type, target_low=None, target_high=None) -> Dict:
