@@ -69,23 +69,24 @@ class GarminService:
             return False
 
     async def export_workout(self, workout) -> Optional[str]:
-        """Export a workout to Garmin Connect. Returns Garmin workout ID."""
         if not self._client:
             if not await self.connect():
                 return None
-        garmin_workout = self._build_garmin_workout(workout)
+    
         try:
-            response = self._client.garth.connectapi(
-                "/workout-service/workout",
-                method="POST",
-                json=garmin_workout,
-            )
+            garmin_workout = self._build_garmin_workout(workout)
+    
+            # python-garminconnect >= 0.3.2 supports this natively
+            response = self._client.upload_cycling_workout(garmin_workout)
+    
             workout_id = response.get("workoutId")
             logger.info("Exported '%s' to Garmin (ID: %s)", workout.title, workout_id)
             return str(workout_id)
+    
         except Exception as e:
             logger.error("Garmin export failed: %s", e)
             return None
+
 
     def _build_garmin_workout(self, workout) -> Dict:
         steps = []
