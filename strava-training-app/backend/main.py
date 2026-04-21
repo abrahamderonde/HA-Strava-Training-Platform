@@ -672,7 +672,7 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
 async def debug_garmin_tokens():
     """Debug: check what Garmin token files exist on disk."""
     from pathlib import Path
-    token_path = Path("/data/strava_training/garmin_tokens")
+    token_path = Path("/config/strava_training/garmin_tokens")
     if not token_path.exists():
         return {"status": "directory_missing", "path": str(token_path), "files": []}
     files = list(token_path.iterdir())
