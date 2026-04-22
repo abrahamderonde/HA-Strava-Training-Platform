@@ -52,17 +52,13 @@ class GarminService:
             return False
 
     async def export_workout(self, workout) -> Optional[str]:
-        """Upload workout to Garmin Connect via connectapi with plain JSON."""
+        """Upload workout to Garmin Connect using upload_workout (POST)."""
         if not self._client:
             if not await self.connect():
                 return None
         try:
             payload = self._build_workout(workout)
-            response = self._client.connectapi(
-                "/workout-service/workout",
-                method="POST",
-                json=payload,
-            )
+            response = self._client.upload_workout(payload)
             workout_id = (response or {}).get("workoutId")
             logger.info("Uploaded '%s' to Garmin (ID: %s)", workout.title, workout_id)
             return str(workout_id) if workout_id else None
