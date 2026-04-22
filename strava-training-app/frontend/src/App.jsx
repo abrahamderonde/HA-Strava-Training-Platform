@@ -34,6 +34,7 @@ const NAV = [
 
 export default function App() {
   const [stravaConnected, setStravaConnected] = useState(false)
+  const [cpNotif, setCpNotif] = useState(null) // {new_cp, user_ftp, difference}
 
   useEffect(() => {
     fetch('/trainiq/strava/status')
@@ -42,9 +43,66 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    fetch('/trainiq/analytics/cp-changed')
+      .then(r => r.json())
+      .then(d => { if (d.changed) setCpNotif(d) })
+      .catch(() => {})
+  }, [])
+
+  const acceptCp = async () => {
+    await fetch('/trainiq/analytics/accept-cp-as-ftp', { method: 'POST' })
+    setCpNotif(null)
+  }
+  const dismissCp = async () => {
+    await fetch('/trainiq/analytics/dismiss-cp-notification', { method: 'POST' })
+    setCpNotif(null)
+  }
+
   return (
     <BrowserRouter>
       <div className="app-shell">
+
+        {cpNotif && (
+          <div style={{
+            position: 'fixed', top: 20, right: 20, zIndex: 1000,
+            background: 'var(--card)', border: '1px solid var(--border)',
+            borderLeft: '4px solid #f97316', borderRadius: 8,
+            padding: '16px 20px', maxWidth: 340, boxShadow: '0 4px 24px rgba(0,0,0,0.4)'
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)' }}>
+              🔋 CP Updated
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+              Your Critical Power estimate changed to <strong style={{color:'var(--text)'}}>{cpNotif.new_cp}W</strong>
+              {' '}({cpNotif.difference > 0 ? '+' : ''}{cpNotif.difference}W vs your FTP of {cpNotif.user_ftp}W).
+              <br/><br/>
+              CP is auto-calculated from your rides. FTP is your manual input used for TSS and zones.
+              Do you want to copy this CP to your FTP?
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={acceptCp}
+                style={{
+                  flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                  background: '#f97316', color: '#fff', fontWeight: 600,
+                  cursor: 'pointer', fontSize: 13
+                }}>
+                Yes, update FTP
+              </button>
+              <button
+                onClick={dismissCp}
+                style={{
+                  flex: 1, padding: '6px 0', borderRadius: 6,
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--muted)', cursor: 'pointer', fontSize: 13
+                }}>
+                Keep current FTP
+              </button>
+            </div>
+          </div>
+        )}
+
         <nav className="sidebar">
           <div className="sidebar-logo">
             <Activity size={24} />

@@ -41,7 +41,7 @@ WORKOUT_SCHEMA = """
       "date": "YYYY-MM-DD",
       "title": "Workout title",
       "description": "Detailed description with specific intervals, power targets, cadence cues, race-inspired elements",
-      "icu_description": "intervals.icu description language — e.g.:\\n- 15m 55%\\n3x\\n- 8m 252-290W\\n- 4m 50%\\n- 10m 55%",
+      "icu_description": "intervals.icu description language",
       "workout_type": "endurance|threshold|vo2max|recovery|race",
       "target_tss": 75,
       "target_duration_minutes": 90,
@@ -55,13 +55,18 @@ WORKOUT_SCHEMA = """
           "rest_seconds": 180,
           "power_low": 270,
           "power_high": 300,
-          "description": "Interval cue"
+          "description": "Interval cue",
+          "steps": [
+            {"duration_seconds": 120, "power_low": 252, "power_high": 270},
+            {"duration_seconds": 15,  "power_low": 275, "power_high": 275}
+          ]
         }
       ]
     }
   ]
 }
 """
+
 
 
 class AICoachService:
@@ -238,7 +243,34 @@ Respond ONLY with valid JSON:
 - Example of good style: "3 sets of 12min sweetspot intervals. Every 4 minutes, throw in a 20sec punch at 120% FTP — stand up and attack it like you're going for the city limit sprint. Recover fully between sets."
 - Include specific watt targets, cadence targets, and vivid cues in descriptions
 
-## icu_description field (IMPORTANT)
+## intervals[] field (IMPORTANT)
+Each interval block represents one section of the workout. For intervals with internal micro-surges (e.g. 8min sweetspot with 15sec punches every 2min), use the "steps" sub-array to list the alternating sub-steps that make up one repeat:
+
+Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
+```
+{
+  "type": "work",
+  "repeats": 3,
+  "rest_seconds": 180,
+  "duration_seconds": 495,
+  "power_low": 252, "power_high": 270,
+  "steps": [
+    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
+    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
+    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
+    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
+    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
+    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
+    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
+    {"duration_seconds": 15,  "power_low": 275, "power_high": 275}
+  ]
+}
+```
+- If there are no micro-surges, omit "steps" and use power_low/power_high directly
+- duration_seconds on the parent should equal the sum of all steps durations
+- steps are repeated once per repeat (the "repeats" field wraps the whole steps block)
+
+
 This field must be valid intervals.icu description language that EXACTLY matches the workout structure described in "description". Rules:
 - Use "- Xm Y-ZW" for a step with watt range (e.g. "- 12m 250-290W")
 - Use "- Xm Y%" for a step as FTP percentage (e.g. "- 15m 55%")

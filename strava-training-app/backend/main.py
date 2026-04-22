@@ -842,6 +842,78 @@ async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     }
 
 
+@app.get("/trainiq/analytics/cp-changed")
+async def check_cp_changed(db: AsyncSession = Depends(get_db)):
+    """Check if CP has changed significantly since the user was last notified.
+    Returns the new CP and user FTP if a notification should be shown."""
+    cp_result = await db.execute(
+        select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
+    )
+    cp_est = cp_result.scalar_one_or_none()
+    if not cp_est:
+        return {"changed": False}
+
+    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal = goal_result.scalar_one_or_none()
+
+    user_ftp = (goal.current_ftp if goal and goal.current_ftp else CONFIG["ftp_initial"])
+    last_notified = goal.last_cp_notified if goal else None
+    new_cp = round(cp_est.cp)
+
+    # Notify if CP changed by >2W since last notification
+    if last_notified is None or abs(new_cp - last_notified) > 2:
+        return {
+            "changed": True,
+            "new_cp": new_cp,
+            "user_ftp": round(user_ftp),
+            "difference": round(new_cp - user_ftp),
+            "estimated_at": cp_est.estimated_at.isoformat(),
+        }
+    return {"changed": False}
+
+
+@app.post("/trainiq/analytics/accept-cp-as-ftp")
+async def accept_cp_as_ftp(db: AsyncSession = Depends(get_db)):
+    """User accepted the new CP as their FTP — update TrainingGoal.current_ftp."""
+    cp_result = await db.execute(
+        select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
+    )
+    cp_est = cp_result.scalar_one_or_none()
+    if not cp_est:
+        raise HTTPException(status_code=404, detail="No CP estimate found")
+
+    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal = goal_result.scalar_one_or_none()
+    if not goal:
+        goal = TrainingGoal()
+        db.add(goal)
+
+    goal.current_ftp = cp_est.cp
+    goal.last_cp_notified = cp_est.cp
+    await db.commit()
+    return {"status": "ok", "new_ftp": round(cp_est.cp)}
+
+
+@app.post("/trainiq/analytics/dismiss-cp-notification")
+async def dismiss_cp_notification(db: AsyncSession = Depends(get_db)):
+    """User dismissed the CP notification — mark as seen without changing FTP."""
+    cp_result = await db.execute(
+        select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
+    )
+    cp_est = cp_result.scalar_one_or_none()
+    if not cp_est:
+        return {"status": "ok"}
+
+    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal = goal_result.scalar_one_or_none()
+    if goal:
+        goal.last_cp_notified = cp_est.cp
+        await db.commit()
+    return {"status": "dismissed"}
+
+
+
+
 @app.get("/trainiq/analytics/zones")
 async def get_zones(db: AsyncSession = Depends(get_db)):
     ftp = await get_current_ftp(db)

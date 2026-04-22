@@ -127,9 +127,21 @@ class GarminService:
             target = power_target(p_low, p_high) if p_low and p_high else NO_TARGET
 
             if repeats > 1:
-                inner = [make_step(1, skey, dur_s, target)]
+                sub_steps = iv.get("steps")
+                if sub_steps:
+                    inner = [
+                        make_step(i+1,
+                                  "interval" if s.get("power_low") else "recovery",
+                                  s["duration_seconds"],
+                                  power_target(s["power_low"], s["power_high"])
+                                  if s.get("power_low") and s.get("power_high")
+                                  else NO_TARGET)
+                        for i, s in enumerate(sub_steps)
+                    ]
+                else:
+                    inner = [make_step(1, skey, dur_s, target)]
                 if rest_s > 0:
-                    inner.append(make_step(2, "recovery", rest_s, NO_TARGET))
+                    inner.append(make_step(len(inner)+1, "recovery", rest_s, NO_TARGET))
                 steps.append({
                     "type": "RepeatGroupDTO",
                     "stepOrder": order,
