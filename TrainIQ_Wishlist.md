@@ -1,74 +1,30 @@
 # TrainIQ — Enhancement Wishlist
 
-*To be implemented after testing. *
+## 0. Known bugs
+**Priority:** High
+**Status:** Pending
+
+- Workout generation misses details
 
 ---
 
 ## 1. Workout planning improvements
-
 **Priority:** High
-**Status:** Testing phase
-
-More detailed user input for workout planning so that the workouts actually fit in busy life
-
-**Requirements:**
-- Create 'global' workout planning from goal.
-    - This would need a indication of how many hours per week.
-    - Result would be hours per week / TSS per week. Short description of type of workouts to be expected.
-- Global workout planning, together with goal, should be input for detailed workout planning. Global planning is only a loose indication. If the user has deviated from this plan in the last few weeks, the detailed planning should adapt.  
-- input for available time. Maybe slider with 15min increments.
-- improve workout query to API. add more fun. 
-- toggle for indoor workout or not. Indoor workouts may be a bit more complex or entertaining. Also the endurance rides are most likely shifted to the outdoor rides. 
-- Additional input field for commutes. No workouts to be generated here, but info is needed to balance intensity etc.
-    - including time (TSS to be estimated)
-    - time to be copied to future commutes
-
-**Notes:**
-- Compare features with join.cc and joinvetka.com
-- API Query could look something like:
-    - Never use the pattern: warm-up → long steady block → cool-down.
-    - Every ride must include at least 2 playful or race-inspired elements.
-    - Every workout must include micro-variability: surges, terrain cues, cadence changes.
-    - Each session must feel like it could come from a real road racer’s training diary.
+**Status:** Finished
 
 ---
 
 ## 2. Distance Progress Graphs
 
 **Priority:** Medium
-**Status:** Testing phase
-
-Multi-year distance comparison charts showing how weekly or monthly distance evolves over the calendar year.
-
-**Requirements:**
-- Line or area chart with one line per year, all years overlaid on a Jan–Dec x-axis
-- Aggregation options: weekly totals or monthly totals
-- **Filter: exclude commutes** (rides tagged as commutes in Strava)
-- **Filter: exclude indoor** (VirtualRide / trainer activities)
-- Hover tooltip showing exact value per year per week/month
-
-**Notes:**
-- Commute flag is available in the Strava activity data (`commute: true/false`) — needs to be stored in the `Activity` model
-- Indoor = `sport_type: VirtualRide` or `trainer: true` in Strava data
+**Status:** Finished
 
 ---
 
 ## 3. Fitness Progress Graph (Year-over-Year CTL)
 
 **Priority:** Medium
-**Status:** Testing Phase
-
-Chart comparing CTL (fitness) across calendar years, so you can see whether this year's fitness is ahead of or behind last year.
-
-**Requirements:**
-- CTL plotted by day-of-year (1–365), one line per year
-- At minimum: current year vs previous year
-- Ideally: all available years with muted colors for older years, current year highlighted
-- Visual reference band showing "better than last year" / "worse than last year"
-
-**Notes:**
-- PMC data is already stored in `training_metrics` table — just needs a year-on-year reshape
-- Should live on the PMC page as a tab or secondary chart
+**Status:** Finished
 
 ---
 
@@ -102,46 +58,16 @@ Track bikes and components, log distance/hours per item, get alerts when service
 ## 5. Historical Commute Generator
 
 **Priority:** Medium
-**Status:** Testing phase
+**Status:** Finished
 
-A tool to backfill synthetic commute activities for the period before commutes were tracked with GPS, so that the fitness timeline (CTL/ATL) reflects actual historical load.
-
-**Commute pattern to backfill:**
-- Days: Monday, Tuesday, Wednesday, Thursday (both ways = 2 rides per day)
-- Duration: 20 minutes per ride
-- Intensity Factor: 0.65
-- TSS per ride: `(20/60) × (0.65 × FTP) × 0.65 / FTP × 100` = **~14 TSS per ride**, ~28 TSS per commute day
-- Tracking started: **4 March 2025** — backfill everything before this date
-
-**Requirements:**
-- UI to set the backfill date range (start date → 3 March 2025)
-- Preview: show how many synthetic activities will be created and total TSS added
-- Confirmation step before writing to DB
-- Synthetic activities clearly flagged (`synthetic: true`, `name: "Commute (estimated)"`)
-- Option to delete all synthetic activities and redo
-- These activities count toward PMC but are excluded from distance graphs, power curve, Eddington number, and gemeente detection
-
-**Notes:**
-- Does not push to Strava — local DB only
-- FTP at time of commute can be estimated or use a fixed configurable value
-- If commutes are ever retroactively added to Strava, synthetic ones can be deleted
+Minor improvements. Hide from side bar, only access page from setting page, as this is not in the daily workflow
 
 ---
 
 ## 6. Gemeente map upgrades
 
 **Priority:** Low
-**Status:** Testing phase
-
-**add filters:**
-- highlight gemeenten first crossed in year XXXX
-- highlight gemeenten passed in last ride (also plot ride)
-
-**GUI layout:**
-- Holland is vertical. So put map and overview of last crossed gemeenten side by side
-
-**rebranding:**
-- naming to be changed to 'Long term NL challenge', according to the original idea by Frank van Moorsel. 
+**Status:** Finished
 
 ---
 
@@ -149,6 +75,7 @@ A tool to backfill synthetic commute activities for the period before commutes w
 
 **Priority:** Low
 **Status:** Testing phase
+Testing result: Progress bar is stil to be done
 
 **progress bar**
 - show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
@@ -185,26 +112,4 @@ A tool to backfill synthetic commute activities for the period before commutes w
 
 ---
 
-## Implementation Notes
-
-- All items above depend on a stable, tested v1 of the core app
-- Items 1 and 2 are pure frontend additions — no new backend models needed
-- Items 3 and 4 require new DB models and backend endpoints
-- The commute flag from Strava (item 1) should be added to the `Activity` model during the next backend update, even if the UI isn't built yet — it will save re-importing all activities later
-
----
-
-## Structural / Naming Conventions (apply on next rebuild)
-
-- Use **"app"** everywhere instead of "add-on" — this is the current Home Assistant terminology - ✓ Done?
-- Main folder name: **`strava-training-app`** (was `strava-training-addon`)
-- `config.yaml` slug: **`strava-training-app`** (was `strava_training`)
-- Update all in-code comments, README, and log messages accordingly
-- **Split README into two files:** ✓ Done
-  - `strava_training/DOCS.md` — HA-focused setup instructions
-  - `README.md` at repo root — GitHub project overview
-  - Add `url` field to `config.yaml` pointing to the GitHub repo
-
----
-
-*Last updated: March 2026*
+*Last updated: April 2026*
