@@ -79,7 +79,38 @@ class GarminService:
             return False
 
     def _build_workout(self, workout) -> Dict:
-        """Build Garmin workout JSON from TrainIQ PlannedWorkout."""
+        """Build Garmin workout JSON from TrainIQ PlannedWorkout.
+        All IDs from garminconnect/workout.py StepType/ConditionType/TargetType enums.
+        """
+        # Helper constants
+        STEP_TYPE = {"warmup": (1,"warmup"), "cooldown": (2,"cooldown"),
+                     "interval": (3,"interval"), "recovery": (4,"recovery")}
+        COND_TIME = {"conditionTypeId": 2, "conditionTypeKey": "time",
+                     "displayOrder": 2, "displayable": True}
+        COND_ITER = {"conditionTypeId": 7, "conditionTypeKey": "iterations",
+                     "displayOrder": 7, "displayable": True}
+        NO_TARGET = {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target",
+                     "displayOrder": 1}
+        SPORT     = {"sportTypeId": 2, "sportTypeKey": "cycling", "displayOrder": 2}
+
+        def step_type_dict(key):
+            sid, skey = STEP_TYPE.get(key, (3, "interval"))
+            return {"stepTypeId": sid, "stepTypeKey": skey, "displayOrder": sid}
+
+        def power_target(p_low, p_high):
+            return {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone",
+                    "displayOrder": 1, "targetValueOne": int(p_low), "targetValueTwo": int(p_high)}
+
+        def make_step(order, type_key, dur_s, target):
+            return {
+                "type": "ExecutableStepDTO",
+                "stepOrder": order,
+                "stepType": step_type_dict(type_key),
+                "endCondition": COND_TIME,
+                "endConditionValue": float(dur_s),
+                "targetType": target,
+            }
+
         steps = []
         order = 1
 
@@ -91,87 +122,40 @@ class GarminService:
             p_low   = iv.get("power_low")
             p_high  = iv.get("power_high")
 
-            step_type = {
-                "warmup":   "warmup",
-                "cooldown": "cooldown",
-                "recovery": "recovery",
-            }.get(itype, "interval")
-
-            target = (
-                {
-                    "workoutTargetTypeId": 2,
-                    "workoutTargetTypeKey": "power.zone",
-                    "displayOrder": 1,
-                    "targetValueOne": int(p_low),
-                    "targetValueTwo": int(p_high),
-                }
-                if p_low and p_high
-                else {
-                    "workoutTargetTypeId": 1,
-                    "workoutTargetTypeKey": "no.target",
-                    "displayOrder": 1,
-                }
-            )
+            skey   = {"warmup": "warmup", "cooldown": "cooldown",
+                      "recovery": "recovery"}.get(itype, "interval")
+            target = power_target(p_low, p_high) if p_low and p_high else NO_TARGET
 
             if repeats > 1:
-                # Use RepeatGroupDTO for proper repeat structure on the device
-                inner_steps = [
-                    {
-                        "type": "ExecutableStepDTO",
-                        "stepOrder": 1,
-                        "stepType": {"stepTypeKey": "interval"},
-                        "endCondition": {"conditionTypeKey": "time"},
-                        "endConditionValue": dur_s,
-                        "targetType": target,
-                    }
-                ]
+                inner = [make_step(1, skey, dur_s, target)]
                 if rest_s > 0:
-                    inner_steps.append({
-                        "type": "ExecutableStepDTO",
-                        "stepOrder": 2,
-                        "stepType": {"stepTypeKey": "recovery"},
-                        "endCondition": {"conditionTypeKey": "time"},
-                        "endConditionValue": rest_s,
-                        "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1},
-                    })
+                    inner.append(make_step(2, "recovery", rest_s, NO_TARGET))
                 steps.append({
                     "type": "RepeatGroupDTO",
                     "stepOrder": order,
+                    "stepType": step_type_dict("interval"),  # required by Garmin
                     "numberOfIterations": repeats,
-                    "workoutSteps": inner_steps,
-                    "endCondition": {"conditionTypeKey": "iterations"},
-                    "endConditionValue": repeats,
+                    "workoutSteps": inner,
+                    "endCondition": COND_ITER,
+                    "endConditionValue": float(repeats),
+                    "smartRepeat": False,
                 })
                 order += 1
             else:
-                steps.append({
-                    "type": "ExecutableStepDTO",
-                    "stepOrder": order,
-                    "stepType": {"stepTypeKey": step_type},
-                    "endCondition": {"conditionTypeKey": "time"},
-                    "endConditionValue": dur_s,
-                    "targetType": target,
-                })
+                steps.append(make_step(order, skey, dur_s, target))
                 order += 1
                 if rest_s > 0:
-                    steps.append({
-                        "type": "ExecutableStepDTO",
-                        "stepOrder": order,
-                        "stepType": {"stepTypeKey": "recovery"},
-                        "endCondition": {"conditionTypeKey": "time"},
-                        "endConditionValue": rest_s,
-                        "targetType": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1},
-                    })
+                    steps.append(make_step(order, "recovery", rest_s, NO_TARGET))
                     order += 1
 
         return {
             "workoutName": workout.title,
             "description": workout.description or "",
-            "sportType": {"sportTypeKey": "cycling"},
+            "sportType": SPORT,
             "estimatedDurationInSecs": int((workout.target_duration_minutes or 60) * 60),
             "workoutSegments": [{
                 "segmentOrder": 1,
-                "sportType": {"sportTypeKey": "cycling"},
+                "sportType": SPORT,
                 "workoutSteps": steps,
             }],
         }
