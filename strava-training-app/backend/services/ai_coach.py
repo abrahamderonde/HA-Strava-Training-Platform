@@ -247,25 +247,17 @@ Respond ONLY with valid JSON:
 Each interval block represents one section of the workout. For intervals with internal micro-surges (e.g. 8min sweetspot with 15sec punches every 2min), use the "steps" sub-array to list the alternating sub-steps that make up one repeat:
 
 Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
-```
-{
-  "type": "work",
-  "repeats": 3,
-  "rest_seconds": 180,
-  "duration_seconds": 495,
-  "power_low": 252, "power_high": 270,
+  "type": "work", "repeats": 3, "rest_seconds": 180, "duration_seconds": 495,
   "steps": [
-    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
-    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
-    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
-    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
-    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
-    {"duration_seconds": 15,  "power_low": 275, "power_high": 275},
-    {"duration_seconds": 120, "power_low": 252, "power_high": 270},
-    {"duration_seconds": 15,  "power_low": 275, "power_high": 275}
+    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
+    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
+    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
+    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
+    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
+    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
+    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
+    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}}
   ]
-}
-```
 - If there are no micro-surges, omit "steps" and use power_low/power_high directly
 - duration_seconds on the parent should equal the sum of all steps durations
 - steps are repeated once per repeat (the "repeats" field wraps the whole steps block)
