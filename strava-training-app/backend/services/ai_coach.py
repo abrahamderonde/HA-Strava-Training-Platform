@@ -244,7 +244,7 @@ Respond ONLY with valid JSON:
 - Include specific watt targets, cadence targets, and vivid cues in descriptions
 
 ## intervals[] field (IMPORTANT)
-Each interval block represents one section of the workout. For intervals with internal micro-surges (e.g. 8min sweetspot with 15sec punches every 2min), use the "steps" sub-array to list the alternating sub-steps that make up one repeat:
+Each interval block represents one section of the workout. Use the "steps" sub-array whenever a block contains internal micro-surges or alternating intensities — this applies to warmup, cooldown, AND work intervals.
 
 Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
   "type": "work", "repeats": 3, "rest_seconds": 180, "duration_seconds": 495,
@@ -258,8 +258,21 @@ Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
     {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
     {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}}
   ]
-- If there are no micro-surges, omit "steps" and use power_low/power_high directly
-- duration_seconds on the parent should equal the sum of all steps durations
+
+Example — 8min cooldown with 2x 30sec leg openers:
+  "type": "cooldown", "repeats": 1, "duration_seconds": 480,
+  "steps": [
+    {{"duration_seconds": 210, "power_low": 120, "power_high": 150}},
+    {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
+    {{"duration_seconds": 180, "power_low": 120, "power_high": 150}},
+    {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
+    {{"duration_seconds": 30,  "power_low": 120, "power_high": 150}}
+  ]
+
+Rules:
+- If a block has uniform intensity throughout, omit "steps" and use power_low/power_high directly
+- If a block has ANY internal structure (surges, openers, build, fade), ALWAYS use "steps"
+- duration_seconds on the parent must equal the sum of all steps durations exactly
 - steps are repeated once per repeat (the "repeats" field wraps the whole steps block)
 
 
