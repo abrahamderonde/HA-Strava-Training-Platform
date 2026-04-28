@@ -246,6 +246,8 @@ Respond ONLY with valid JSON:
 ## intervals[] field (IMPORTANT)
 Each interval block represents one section of the workout. Use the "steps" sub-array whenever a block contains internal micro-surges or alternating intensities — this applies to warmup, cooldown, AND work intervals.
 
+CRITICAL RULE: If you mention ANY sub-element in the description (surges, openers, accelerations, builds, punches, attacks, spikes — anything that implies a different intensity), you MUST generate "steps" for that block. You decide the exact timing — place sub-elements at sensible intervals within the block. Never write about a sub-element and then leave the interval as a flat block.
+
 Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
   "type": "work", "repeats": 3, "rest_seconds": 180, "duration_seconds": 495,
   "steps": [
@@ -259,19 +261,19 @@ Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
     {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}}
   ]
 
-Example — 8min cooldown with 2x 30sec leg openers:
+Example — 8min cooldown with 2x 30sec leg openers (you choose timing: at 2min and 5min):
   "type": "cooldown", "repeats": 1, "duration_seconds": 480,
   "steps": [
-    {{"duration_seconds": 210, "power_low": 120, "power_high": 150}},
+    {{"duration_seconds": 120, "power_low": 120, "power_high": 150}},
     {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
     {{"duration_seconds": 180, "power_low": 120, "power_high": 150}},
     {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
-    {{"duration_seconds": 30,  "power_low": 120, "power_high": 150}}
+    {{"duration_seconds": 120, "power_low": 120, "power_high": 150}}
   ]
 
 Rules:
-- If a block has uniform intensity throughout, omit "steps" and use power_low/power_high directly
-- If a block has ANY internal structure (surges, openers, build, fade), ALWAYS use "steps"
+- Flat intensity throughout → omit "steps", use power_low/power_high directly
+- Any sub-element mentioned → ALWAYS use "steps", YOU decide the timing
 - duration_seconds on the parent must equal the sum of all steps durations exactly
 - steps are repeated once per repeat (the "repeats" field wraps the whole steps block)
 
