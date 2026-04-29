@@ -248,6 +248,8 @@ Each interval block represents one section of the workout. Use the "steps" sub-a
 
 CRITICAL RULE: If you mention ANY sub-element in the description (surges, openers, accelerations, builds, punches, attacks, spikes — anything that implies a different intensity), you MUST generate "steps" for that block. You decide the exact timing — place sub-elements at sensible intervals within the block. Never write about a sub-element and then leave the interval as a flat block.
 
+ALTERNATIVE RULE: If a warmup or cooldown has sub-elements (e.g. leg openers in cooldown), you may instead split it into separate consecutive interval blocks rather than using steps. For example a cooldown with 2 leg openers = [6min cooldown flat] + [2x 30sec work + 30sec easy] + [1min cooldown flat]. This is acceptable and often cleaner.
+
 Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
   "type": "work", "repeats": 3, "rest_seconds": 180, "duration_seconds": 495,
   "steps": [
@@ -313,7 +315,18 @@ Respond ONLY with valid JSON:
                 text = text.split("```")[1]
                 if text.startswith("json"):
                     text = text[4:]
-            return json.loads(text.strip())
+            result = json.loads(text.strip())
+
+            # Log what the AI generated so we can debug step generation
+            for w in (result.get("workouts") or []):
+                for iv in (w.get("intervals") or []):
+                    logger.info(
+                        "AI interval: type=%s dur=%s repeats=%s has_steps=%s desc=%s",
+                        iv.get("type"), iv.get("duration_seconds"),
+                        iv.get("repeats"), bool(iv.get("steps")),
+                        (iv.get("description") or "")[:80]
+                    )
+            return result
         except Exception as e:
             logger.error("Weekly plan generation failed: %s", e)
             return None
