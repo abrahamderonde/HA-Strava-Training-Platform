@@ -6,18 +6,47 @@ export default function Settings() {
   const [haUrl, setHaUrl] = useState(() => localStorage.getItem('ha_url') || '')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [ftpData, setFtpData] = useState(null)
+  const [goalData, setGoalData] = useState(null)
+  const [ftpInput, setFtpInput] = useState('')
+  const [ftpSaving, setFtpSaving] = useState(false)
+  const [ftpMsg, setFtpMsg] = useState(null)
 
   useEffect(() => {
-    fetch('/trainiq/strava/status')
-      .then(r => r.json())
-      .then(setStatus)
-      .catch(e => console.error('Status fetch failed:', e))
-
-    fetch('/trainiq/settings')
-      .then(r => r.json())
-      .then(setConfig)
-      .catch(e => console.error('Settings fetch failed:', e))
+    fetch('/trainiq/strava/status').then(r => r.json()).then(setStatus).catch(() => {})
+    fetch('/trainiq/settings').then(r => r.json()).then(setConfig).catch(() => {})
+    fetch('/trainiq/analytics/ftp').then(r => r.json()).then(setFtpData).catch(() => {})
+    fetch('/trainiq/goals').then(r => r.json()).then(d => {
+      setGoalData(d)
+      if (d?.current_ftp) setFtpInput(String(Math.round(d.current_ftp)))
+    }).catch(() => {})
   }, [])
+
+  const saveFtp = async () => {
+    const val = parseFloat(ftpInput)
+    if (!val || val < 50 || val > 600) { setFtpMsg('Enter a value between 50 and 600W'); return }
+    setFtpSaving(true)
+    try {
+      await fetch('/trainiq/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...goalData, current_ftp: val }),
+      })
+      setGoalData(g => ({ ...g, current_ftp: val }))
+      setFtpMsg('FTP saved ✓')
+      setTimeout(() => setFtpMsg(null), 3000)
+    } catch { setFtpMsg('Save failed') }
+    setFtpSaving(false)
+  }
+
+  const copyCpToFtp = async () => {
+    const res = await fetch('/trainiq/analytics/accept-cp-as-ftp', { method: 'POST' })
+    const d = await res.json()
+    setGoalData(g => ({ ...g, current_ftp: d.new_ftp }))
+    setFtpInput(String(d.new_ftp))
+    setFtpMsg(`FTP updated to ${d.new_ftp}W ✓`)
+    setTimeout(() => setFtpMsg(null), 3000)
+  }
 
   const connectStrava = async () => {
     setError(null)
@@ -141,15 +170,77 @@ export default function Settings() {
           )}
         </div>
 
-        {/* FTP Model */}
+        {/* CP vs FTP */}
         <div className="card">
-          <div className="card-title">FTP &amp; Power Model</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
-            <p>Automatically estimated from last 60 days of power data using the <strong>3-parameter Critical Power model</strong> (Morton, 1996):</p>
-            <code style={{ display: 'block', margin: '8px 0', background: 'var(--surface2)', padding: '8px 12px', borderRadius: 6, fontSize: 12, color: 'var(--accent2)' }}>
-              P(t) = W'/t + CP + (Pmax−CP)·e^(−t/τ)
-            </code>
-            <p>FTP = CP. Re-fit nightly at 2:00 AM. Initial FTP is used until enough power data is available.</p>
+          <div className="card-title">Critical Power vs FTP</div>
+
+          {/* Two columns: CP (auto) | FTP (manual) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>CP — Auto calculated</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)' }}>
+                {ftpData?.cp ? `${Math.round(ftpData.cp)}W` : '—'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                3-param CP model · updated nightly
+              </div>
+              {ftpData?.r_squared && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                  R² = {ftpData.r_squared.toFixed(3)}
+                  {ftpData.estimated_at && ` · ${new Date(ftpData.estimated_at).toLocaleDateString()}`}
+                </div>
+              )}
+              {ftpData?.w_prime && (
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                  W' = {(ftpData.w_prime / 1000).toFixed(1)} kJ
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>FTP — Manual input</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>
+                {goalData?.current_ftp ? `${Math.round(goalData.current_ftp)}W` : config?.ftp_initial ? `${config.ftp_initial}W` : '—'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                Used for TSS, zones, workout targets
+              </div>
+              {goalData?.current_ftp && ftpData?.cp && (
+                <div style={{ fontSize: 12, marginTop: 6, color: Math.abs(goalData.current_ftp - ftpData.cp) > 5 ? '#f97316' : 'var(--muted)' }}>
+                  {Math.round(goalData.current_ftp - ftpData.cp) > 0 ? '+' : ''}{Math.round(goalData.current_ftp - ftpData.cp)}W vs CP
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Manual FTP input */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <input
+              type="number"
+              value={ftpInput}
+              onChange={e => setFtpInput(e.target.value)}
+              placeholder="Enter FTP (W)"
+              style={{
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '7px 12px', color: 'var(--text)',
+                fontSize: 14, width: 140,
+              }}
+            />
+            <button className="btn btn-primary btn-sm" onClick={saveFtp} disabled={ftpSaving}>
+              {ftpSaving ? 'Saving…' : 'Set FTP'}
+            </button>
+            {ftpData?.cp && (
+              <button className="btn btn-ghost btn-sm" onClick={copyCpToFtp}
+                title="Copy current CP value to FTP">
+                Copy CP → FTP
+              </button>
+            )}
+            {ftpMsg && <span style={{ fontSize: 13, color: ftpMsg.includes('✓') ? '#22c55e' : '#f97316' }}>{ftpMsg}</span>}
+          </div>
+
+          <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <strong>CP</strong> is automatically estimated from your power data using the 3-parameter critical power model (Morton, 1996). It updates nightly as you ride.<br/>
+            <strong>FTP</strong> is your manual input and is used for all TSS calculations, power zones, and workout targets. You stay in control of when it changes — use "Copy CP → FTP" when you agree with the model's estimate.
           </div>
         </div>
 

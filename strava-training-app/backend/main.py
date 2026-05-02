@@ -825,15 +825,20 @@ async def get_distance_by_year(
 
 @app.get("/trainiq/analytics/ftp")
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
+    cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
     )
-    estimate = result.scalar_one_or_none()
+    estimate = cp_result.scalar_one_or_none()
+
+    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal = goal_result.scalar_one_or_none()
+    user_ftp = float(goal.current_ftp) if goal and goal.current_ftp else float(CONFIG.get("ftp_initial", 200))
+
     if not estimate:
-        return {"ftp": CONFIG["ftp_initial"], "source": "initial_config", "r_squared": None}
+        return {"ftp": user_ftp, "cp": None, "source": "manual", "r_squared": None}
     return {
-        "ftp": estimate.cp,
-        "cp": estimate.cp,
+        "ftp": user_ftp,           # user-controlled, used for TSS/zones
+        "cp": estimate.cp,         # auto-calculated, display only
         "w_prime": estimate.w_prime,
         "p_max": estimate.p_max,
         "r_squared": estimate.r_squared,
@@ -1368,10 +1373,18 @@ async def get_planned_workouts(
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async def get_current_ftp(db: AsyncSession) -> float:
-    result = await db.execute(
+    """Returns FTP for TSS/zone calculations.
+    Priority: 1) user-set TrainingGoal.current_ftp, 2) auto CP estimate, 3) config initial."""
+    # User-set FTP takes precedence
+    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal = goal_result.scalar_one_or_none()
+    if goal and goal.current_ftp:
+        return float(goal.current_ftp)
+    # Fall back to auto CP
+    cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
     )
-    estimate = result.scalar_one_or_none()
+    estimate = cp_result.scalar_one_or_none()
     return estimate.cp if estimate else float(CONFIG.get("ftp_initial", 200))
 
 

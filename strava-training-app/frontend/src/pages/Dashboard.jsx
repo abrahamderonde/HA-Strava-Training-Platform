@@ -115,11 +115,17 @@ export default function Dashboard() {
           sub={latest?.tsb > 5 ? 'Race ready' : latest?.tsb > -10 ? 'Training zone' : 'Fatigued'}
         />
         <StatTile
-          label="FTP"
-          value={ftp?.ftp?.toFixed(0)}
+          label="CP (auto)"
+          value={ftp?.cp?.toFixed(0)}
           unit="W"
           color="var(--accent)"
-          sub={ftp?.source === 'cp3_model' ? '3-param CP model' : 'Manual'}
+          sub="3-param model · nightly"
+        />
+        <StatTile
+          label="FTP (manual)"
+          value={ftp?.ftp?.toFixed(0)}
+          unit="W"
+          sub="Used for TSS & zones"
         />
         {ftp?.w_prime && (
           <StatTile
