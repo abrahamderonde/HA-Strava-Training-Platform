@@ -39,9 +39,8 @@ WORKOUT_SCHEMA = """
   "workouts": [
     {
       "date": "YYYY-MM-DD",
-      "title": "Workout title",
-      "description": "Detailed description with specific intervals, power targets, cadence cues, race-inspired elements",
-      "icu_description": "intervals.icu description language",
+      "title": "Short workout title",
+      "description": "Coach-style description derived strictly from the intervals[] you designed.",
       "workout_type": "endurance|threshold|vo2max|recovery|race",
       "target_tss": 75,
       "target_duration_minutes": 90,
@@ -49,23 +48,21 @@ WORKOUT_SCHEMA = """
       "indoor": false,
       "intervals": [
         {
-          "type": "work|recovery|warmup|cooldown",
-          "duration_seconds": 720,
-          "repeats": 3,
-          "rest_seconds": 180,
-          "power_low": 270,
-          "power_high": 300,
-          "description": "Interval cue",
-          "steps": [
-            {"duration_seconds": 120, "power_low": 252, "power_high": 270},
-            {"duration_seconds": 15,  "power_low": 275, "power_high": 275}
-          ]
+          "type": "warmup|work|recovery|cooldown",
+          "duration_seconds": 900,
+          "repeats": 1,
+          "rest_seconds": 0,
+          "power_low": 140,
+          "power_high": 180,
+          "steps": []
         }
       ]
     }
   ]
 }
 """
+
+
 
 
 
@@ -205,101 +202,64 @@ Respond ONLY with valid JSON:
 - Focus: {global_plan_week.get('description', '')}
 """
 
-        prompt = f"""You are an expert cycling coach. Create a detailed training plan for this specific week.
+        prompt = f"""You are an expert cycling coach. Generate a structured training week as JSON.
 
 ## Athlete
 - FTP: {ftp}W
-- Current Fitness (CTL): {current_ctl:.1f}
-- Current Fatigue (ATL): {current_atl:.1f}
-- Current Form (TSB): {current_tsb:.1f}
+- CTL: {current_ctl:.1f} | ATL: {current_atl:.1f} | TSB: {current_tsb:.1f}
 {global_context}
 ## Power Zones
 {zones_str}
 
 ## Goal
 - Event: {goal.event_name} on {goal.event_date.strftime("%Y-%m-%d")}
-- Distance: {goal.event_distance_km or "?"}km
+- Distance: {goal.event_distance_km or "?"}km, Elevation: {goal.event_elevation_m or "?"}m
 - Athlete goal: {goal.goal_description}
 
-## Recent Training
-{chr(10).join(recent_summary) if recent_summary else "No recent data"}
-
-## This Week's Schedule (USE EXACTLY THESE DATES)
+## This Week's Schedule
 {chr(10).join(day_lines)}
 
-## Workout Design Rules
-- Only generate workouts on days that have workout_minutes > 0
-- NEVER exceed the workout_minutes specified for each day — you may reduce if TSB < -25
-- Factor in commute TSS when estimating daily total load
-- TSB = {current_tsb:.1f}: {"reduce intensity, prioritize recovery" if current_tsb < -20 else "good form, can push hard" if current_tsb > 5 else "balanced, normal training"}
-- Indoor workouts: can be more structured, complex intervals, higher intensity
-- Outdoor workouts: terrain cues, surges on climbs, group ride dynamics
+## Rules
+- Only generate workouts on days with workout_minutes > 0
+- Never exceed workout_minutes for each day
+- TSB={current_tsb:.1f}: {"prioritize recovery" if current_tsb < -20 else "can push hard" if current_tsb > 5 else "normal training"}
+- Indoor: more structured intervals. Outdoor: terrain cues.
 
-## Workout Style (IMPORTANT)
-- NEVER use the pattern: warm-up → long steady block → cool-down
-- Every workout MUST include at least 2 race-inspired or playful elements
-- Include micro-variability: cadence changes, brief surges, terrain cues
-- Write descriptions as a coach talking to an athlete — specific, energetic, concrete
-- Example of good style: "3 sets of 12min sweetspot intervals. Every 4 minutes, throw in a 20sec punch at 120% FTP — stand up and attack it like you're going for the city limit sprint. Recover fully between sets."
-- Include specific watt targets, cadence targets, and vivid cues in descriptions
+## How to build each workout
 
-## intervals[] field (IMPORTANT)
-Each interval block represents one section of the workout. Use the "steps" sub-array whenever a block contains internal micro-surges or alternating intensities — this applies to warmup, cooldown, AND work intervals.
+### Step 1 — Design the intervals[] array first. This is what goes to Garmin.
+Each element is one block:
+- "type": warmup / work / recovery / cooldown
+- "duration_seconds": total seconds for this block
+- "repeats": how many times to repeat (default 1)
+- "rest_seconds": rest between repeats (0 if none)
+- "power_low" / "power_high": watt targets
+- "steps": sub-steps array — use this when a block has mixed intensities
 
-CRITICAL RULE: If you mention ANY sub-element in the description (surges, openers, accelerations, builds, punches, attacks, spikes — anything that implies a different intensity), you MUST generate "steps" for that block. You decide the exact timing — place sub-elements at sensible intervals within the block. Never write about a sub-element and then leave the interval as a flat block.
+STEPS RULE: When a block alternates between two intensities (e.g. 2min tempo + 15sec punch, repeated), list every sub-step explicitly in "steps". The sum of step durations must equal duration_seconds.
 
-ALTERNATIVE RULE: If a warmup or cooldown has sub-elements (e.g. leg openers in cooldown), you may instead split it into separate consecutive interval blocks rather than using steps. For example a cooldown with 2 leg openers = [6min cooldown flat] + [2x 30sec work + 30sec easy] + [1min cooldown flat]. This is acceptable and often cleaner.
+Example — 3x block of [2min@252-270W + 15sec@320W], 3min rest:
+  {{"type":"work","repeats":3,"rest_seconds":180,"duration_seconds":495,"steps":[
+    {{"duration_seconds":120,"power_low":252,"power_high":270}},
+    {{"duration_seconds":15,"power_low":320,"power_high":320}},
+    {{"duration_seconds":120,"power_low":252,"power_high":270}},
+    {{"duration_seconds":15,"power_low":320,"power_high":320}},
+    {{"duration_seconds":120,"power_low":252,"power_high":270}},
+    {{"duration_seconds":15,"power_low":320,"power_high":320}},
+    {{"duration_seconds":120,"power_low":252,"power_high":270}},
+    {{"duration_seconds":15,"power_low":320,"power_high":320}}
+  ]}}
 
-Example — 3x (8min sweetspot with 15sec surge every 2min, 3min rest):
-  "type": "work", "repeats": 3, "rest_seconds": 180, "duration_seconds": 495,
-  "steps": [
-    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
-    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
-    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
-    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
-    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
-    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}},
-    {{"duration_seconds": 120, "power_low": 252, "power_high": 270}},
-    {{"duration_seconds": 15,  "power_low": 275, "power_high": 275}}
-  ]
+For warmup/cooldown with sub-elements (e.g. leg openers): use separate consecutive blocks instead of steps:
+  [{{"type":"cooldown","duration_seconds":360,"power_low":120,"power_high":150}},
+   {{"type":"work","repeats":2,"rest_seconds":30,"duration_seconds":30,"power_low":220,"power_high":240}},
+   {{"type":"cooldown","duration_seconds":60,"power_low":100,"power_high":130}}]
 
-Example — 8min cooldown with 2x 30sec leg openers (you choose timing: at 2min and 5min):
-  "type": "cooldown", "repeats": 1, "duration_seconds": 480,
-  "steps": [
-    {{"duration_seconds": 120, "power_low": 120, "power_high": 150}},
-    {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
-    {{"duration_seconds": 180, "power_low": 120, "power_high": 150}},
-    {{"duration_seconds": 30,  "power_low": 220, "power_high": 240}},
-    {{"duration_seconds": 120, "power_low": 120, "power_high": 150}}
-  ]
-
-Rules:
-- Flat intensity throughout → omit "steps", use power_low/power_high directly
-- Any sub-element mentioned → ALWAYS use "steps", YOU decide the timing
-- duration_seconds on the parent must equal the sum of all steps durations exactly
-- steps are repeated once per repeat (the "repeats" field wraps the whole steps block)
-
-
-This field must be valid intervals.icu description language that EXACTLY matches the workout structure described in "description". Rules:
-- Use "- Xm Y-ZW" for a step with watt range (e.g. "- 12m 250-290W")
-- Use "- Xm Y%" for a step as FTP percentage (e.g. "- 15m 55%")
-- Use "- Xs Y-ZW" for steps under 1 minute (e.g. "- 30s 440-500W")
-- "Nx" on its own line means: repeat ALL the following "- " lines N times as one block
-- The repeat block ends when there are no more indented "- " lines or a new non-indented line appears
-- CRITICAL: if a set contains multiple sub-steps (e.g. 4x climbing with surges every 2min = 8 sub-steps per set), ALL sub-steps must be listed inside the repeat block
-- Example for "4x 8min climbing with 15sec surge every 2min, 4min rest between sets":
-  4x
-  - 2m 252-290W
-  - 15s 320-340W
-  - 2m 252-290W
-  - 15s 320-340W
-  - 2m 252-290W
-  - 15s 320-340W
-  - 2m 252-290W
-  - 15s 320-340W
-  - 4m 50%
-- Do NOT use nested Nx blocks — flatten all repeats into explicit steps
-- The total time of all steps must equal target_duration_minutes
+### Step 2 — Write description STRICTLY based on the intervals[] you just built
+- Describe exactly what is in intervals[], nothing more
+- Include cadence cues where relevant (these don't change the structure)
+- Vivid, coach-style language. No warmup→steady→cooldown template.
+- Watt targets must match intervals[]
 
 Respond ONLY with valid JSON:
 {WORKOUT_SCHEMA}"""
