@@ -87,6 +87,7 @@ export default function PowerCurve() {
     load()
   }, [weight])
 
+  const currentCp  = ftp?.cp  || ftp?.ftp || 0
   const currentFtp = ftp?.ftp || 0
 
   return (
@@ -94,26 +95,36 @@ export default function PowerCurve() {
       <div className="page-header">
         <h1 className="page-title">Power Curve</h1>
         <p className="page-subtitle">
-          Mean maximal power from last 60 days · FTP via 3-parameter Critical Power model (Morton 1996)
+          Mean maximal power from last 60 days · 3-parameter Critical Power model (Morton 1996)
         </p>
       </div>
 
-      {/* FTP stats */}
+      {/* Stats */}
       <div className="stat-grid">
         <div className="stat-tile">
-          <div className="stat-label">FTP (= CP)</div>
+          <div className="stat-label">CP (auto)</div>
           <div className="stat-value" style={{ color: 'var(--accent)' }}>
-            {currentFtp.toFixed(0)}
+            {currentCp.toFixed(0)}
             <span className="stat-unit">W</span>
           </div>
           <div className="stat-delta" style={{ color: 'var(--muted)' }}>
-            Critical Power — Morton (1996)
+            Critical Power · Morton (1996)
           </div>
         </div>
         <div className="stat-tile">
-          <div className="stat-label">W/kg</div>
+          <div className="stat-label">FTP (manual)</div>
           <div className="stat-value">
-            {weight > 0 ? (currentFtp / weight).toFixed(2) : '—'}
+            {currentFtp ? currentFtp.toFixed(0) : '—'}
+            <span className="stat-unit">W</span>
+          </div>
+          <div className="stat-delta" style={{ color: currentFtp && currentCp && Math.abs(currentFtp - currentCp) > 5 ? '#f97316' : 'var(--muted)' }}>
+            {currentFtp && currentCp ? `${Math.round(currentFtp - currentCp) > 0 ? '+' : ''}${Math.round(currentFtp - currentCp)}W vs CP` : 'Set in Settings'}
+          </div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-label">W/kg (CP)</div>
+          <div className="stat-value">
+            {weight > 0 ? (currentCp / weight).toFixed(2) : '—'}
             <span className="stat-unit">W/kg</span>
           </div>
         </div>
@@ -242,7 +253,7 @@ export default function PowerCurve() {
                   stroke="var(--accent)"
                   strokeDasharray="6 3"
                   label={{
-                    value: `FTP ${currentFtp.toFixed(0)}W`,
+                    value: `CP ${currentCp.toFixed(0)}W`,
                     fill: 'var(--accent)',
                     fontSize: 11,
                     position: 'insideTopRight',

@@ -15,11 +15,11 @@ export default function Settings() {
   useEffect(() => {
     fetch('/trainiq/strava/status').then(r => r.json()).then(setStatus).catch(() => {})
     fetch('/trainiq/settings').then(r => r.json()).then(setConfig).catch(() => {})
-    fetch('/trainiq/analytics/ftp').then(r => r.json()).then(setFtpData).catch(() => {})
-    fetch('/trainiq/goals').then(r => r.json()).then(d => {
-      setGoalData(d)
-      if (d?.current_ftp) setFtpInput(String(Math.round(d.current_ftp)))
+    fetch('/trainiq/analytics/ftp').then(r => r.json()).then(d => {
+      setFtpData(d)
+      if (d?.ftp) setFtpInput(String(Math.round(d.ftp)))
     }).catch(() => {})
+    fetch('/trainiq/goals').then(r => r.json()).then(setGoalData).catch(() => {})
   }, [])
 
   const saveFtp = async () => {
@@ -27,12 +27,15 @@ export default function Settings() {
     if (!val || val < 50 || val > 600) { setFtpMsg('Enter a value between 50 and 600W'); return }
     setFtpSaving(true)
     try {
-      await fetch('/trainiq/goals', {
-        method: 'POST',
+      const res = await fetch('/trainiq/goals/ftp', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...goalData, current_ftp: val }),
+        body: JSON.stringify({ ftp: val }),
       })
-      setGoalData(g => ({ ...g, current_ftp: val }))
+      if (!res.ok) throw new Error('Save failed')
+      setGoalData(g => ({ ...(g || {}), current_ftp: val }))
+      // Refresh ftp data so CP vs FTP display updates
+      fetch('/trainiq/analytics/ftp').then(r => r.json()).then(setFtpData).catch(() => {})
       setFtpMsg('FTP saved ✓')
       setTimeout(() => setFtpMsg(null), 3000)
     } catch { setFtpMsg('Save failed') }
@@ -200,14 +203,14 @@ export default function Settings() {
             <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: '14px 16px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>FTP — Manual input</div>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>
-                {goalData?.current_ftp ? `${Math.round(goalData.current_ftp)}W` : config?.ftp_initial ? `${config.ftp_initial}W` : '—'}
+                {ftpData?.ftp ? `${Math.round(ftpData.ftp)}W` : config?.ftp_initial ? `${config.ftp_initial}W` : '—'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                 Used for TSS, zones, workout targets
               </div>
-              {goalData?.current_ftp && ftpData?.cp && (
-                <div style={{ fontSize: 12, marginTop: 6, color: Math.abs(goalData.current_ftp - ftpData.cp) > 5 ? '#f97316' : 'var(--muted)' }}>
-                  {Math.round(goalData.current_ftp - ftpData.cp) > 0 ? '+' : ''}{Math.round(goalData.current_ftp - ftpData.cp)}W vs CP
+              {ftpData?.ftp && ftpData?.cp && (
+                <div style={{ fontSize: 12, marginTop: 6, color: Math.abs(ftpData.ftp - ftpData.cp) > 5 ? '#f97316' : 'var(--muted)' }}>
+                  {Math.round(ftpData.ftp - ftpData.cp) > 0 ? '+' : ''}{Math.round(ftpData.ftp - ftpData.cp)}W vs CP
                 </div>
               )}
             </div>

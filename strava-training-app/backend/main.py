@@ -1056,7 +1056,25 @@ async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
     return {"id": goal.id, "status": "created"}
 
 
-@app.post("/trainiq/planning/generate-global-plan")
+@app.patch("/trainiq/goals/ftp")
+async def update_user_ftp(request: Request, db: AsyncSession = Depends(get_db)):
+    """Update only the user FTP on the active goal. Creates goal stub if none exists."""
+    data = await request.json()
+    new_ftp = float(data.get("ftp", 0))
+    if new_ftp < 50 or new_ftp > 600:
+        raise HTTPException(status_code=400, detail="FTP must be between 50 and 600W")
+
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
+    goal = goal_result.scalar_one_or_none()
+    if not goal:
+        goal = TrainingGoal(created_at=datetime.now(), active=True)
+        db.add(goal)
+    goal.current_ftp = new_ftp
+    await db.commit()
+    return {"status": "ok", "ftp": new_ftp}
+
+
+
 async def generate_global_plan(request: Request, db: AsyncSession = Depends(get_db)):
     """Generate or regenerate the phased global training plan for the active goal."""
     data = await request.json()
