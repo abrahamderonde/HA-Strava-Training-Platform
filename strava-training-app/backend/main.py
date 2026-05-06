@@ -865,6 +865,9 @@ async def check_cp_changed(db: AsyncSession = Depends(get_db)):
     last_notified = getattr(goal, 'last_cp_notified', None) if goal else None
     new_cp = round(cp_est.cp)
 
+    logger.info("cp-changed check: new_cp=%s last_notified=%s user_ftp=%s goal_id=%s",
+                new_cp, last_notified, user_ftp, goal.id if goal else None)
+
     # Notify if CP changed by >2W since last notification
     if last_notified is None or abs(new_cp - last_notified) > 2:
         return {
@@ -914,6 +917,9 @@ async def dismiss_cp_notification(db: AsyncSession = Depends(get_db)):
     if goal:
         goal.last_cp_notified = cp_est.cp
         await db.commit()
+        logger.info("Dismissed CP notification: set last_cp_notified=%s on goal_id=%s", cp_est.cp, goal.id)
+    else:
+        logger.warning("Dismiss: no goal found to update")
     return {"status": "dismissed"}
 
 

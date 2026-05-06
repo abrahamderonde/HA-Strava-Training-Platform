@@ -44,23 +44,26 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (sessionStorage.getItem('cp_checked')) return
     fetch('/trainiq/analytics/cp-changed')
       .then(r => r.json())
       .then(d => {
-        sessionStorage.setItem('cp_checked', '1')
-        if (d.changed) setCpNotif(d)
+        if (!d.changed) return
+        // Only show if user hasn't already seen this exact CP value
+        const seenCp = localStorage.getItem('cp_notif_seen')
+        if (seenCp && Math.abs(parseFloat(seenCp) - d.new_cp) <= 2) return
+        setCpNotif(d)
       })
       .catch(() => {})
   }, [])
 
   const acceptCp = async () => {
     await fetch('/trainiq/analytics/accept-cp-as-ftp', { method: 'POST' })
+    localStorage.setItem('cp_notif_seen', String(cpNotif?.new_cp))
     setCpNotif(null)
   }
   const dismissCp = async () => {
     await fetch('/trainiq/analytics/dismiss-cp-notification', { method: 'POST' })
-    sessionStorage.removeItem('cp_checked')
+    localStorage.setItem('cp_notif_seen', String(cpNotif?.new_cp))
     setCpNotif(null)
   }
 
