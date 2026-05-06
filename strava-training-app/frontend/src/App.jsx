@@ -44,9 +44,13 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (sessionStorage.getItem('cp_checked')) return
     fetch('/trainiq/analytics/cp-changed')
       .then(r => r.json())
-      .then(d => { if (d.changed) setCpNotif(d) })
+      .then(d => {
+        sessionStorage.setItem('cp_checked', '1')
+        if (d.changed) setCpNotif(d)
+      })
       .catch(() => {})
   }, [])
 
@@ -56,6 +60,7 @@ export default function App() {
   }
   const dismissCp = async () => {
     await fetch('/trainiq/analytics/dismiss-cp-notification', { method: 'POST' })
+    sessionStorage.removeItem('cp_checked')
     setCpNotif(null)
   }
 

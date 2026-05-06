@@ -830,7 +830,7 @@ async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     )
     estimate = cp_result.scalar_one_or_none()
 
-    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     user_ftp = float(goal.current_ftp) if goal and goal.current_ftp else float(CONFIG.get("ftp_initial", 200))
 
@@ -858,7 +858,7 @@ async def check_cp_changed(db: AsyncSession = Depends(get_db)):
     if not cp_est:
         return {"changed": False}
 
-    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
 
     user_ftp = (goal.current_ftp if goal and goal.current_ftp else CONFIG["ftp_initial"])
@@ -887,7 +887,7 @@ async def accept_cp_as_ftp(db: AsyncSession = Depends(get_db)):
     if not cp_est:
         raise HTTPException(status_code=404, detail="No CP estimate found")
 
-    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     if not goal:
         goal = TrainingGoal()
@@ -909,7 +909,7 @@ async def dismiss_cp_notification(db: AsyncSession = Depends(get_db)):
     if not cp_est:
         return {"status": "ok"}
 
-    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     if goal:
         goal.last_cp_notified = cp_est.cp
@@ -1394,7 +1394,7 @@ async def get_current_ftp(db: AsyncSession) -> float:
     """Returns FTP for TSS/zone calculations.
     Priority: 1) user-set TrainingGoal.current_ftp, 2) auto CP estimate, 3) config initial."""
     # User-set FTP takes precedence
-    goal_result = await db.execute(select(TrainingGoal).limit(1))
+    goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     if goal and goal.current_ftp:
         return float(goal.current_ftp)
