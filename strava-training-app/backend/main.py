@@ -862,7 +862,7 @@ async def check_cp_changed(db: AsyncSession = Depends(get_db)):
     goal = goal_result.scalar_one_or_none()
 
     user_ftp = (goal.current_ftp if goal and goal.current_ftp else CONFIG["ftp_initial"])
-    last_notified = goal.last_cp_notified if goal else None
+    last_notified = getattr(goal, 'last_cp_notified', None) if goal else None
     new_cp = round(cp_est.cp)
 
     # Notify if CP changed by >2W since last notification
