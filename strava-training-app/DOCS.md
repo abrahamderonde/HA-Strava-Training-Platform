@@ -42,7 +42,7 @@ TrainIQ uses the `garth` library to push workouts to Garmin Connect. Use your re
 
 > Claude is used only for workout generation and training goal summaries.  
 > All training science (PMC, power curve, FTP, TSS) runs locally as deterministic algorithms.  
-> Typical cost: ~€0.10/month.
+> Typical cost: ~€0.50/month.
 
 ---
 
