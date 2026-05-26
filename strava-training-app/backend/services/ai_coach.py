@@ -245,17 +245,23 @@ Rules:
 ### Indoor rules (indoor=true)
 - Break work blocks ≤12min unless threshold+
 - No steady Z2 longer than 25min without variation
-- Use at least one of: cadence variation, power ramp, float recovery
+- Use at least one of: power ramp (increasing steps), over-unders, neuromuscular spins, terrain sim, or split the block into shorter repeats
 
 ### Allowed engagement patterns (1-2x per week, scientifically valid)
-- Cadence ladder in Z2: 5min@90rpm → 5min@100rpm → 5min@85rpm (same power)
-- Neuromuscular spins: 6-8×10s@Z6, full recovery (Base/Build)
-- Low-cadence strength: 3-5×6min@Z3-Z4 at 55-65rpm seated
-- Over-unders: 2min@95%FTP / 1min@105%FTP alternating (Build/Peak only)
-- Micro-shifts: ±10W every 45s at same zone (indoor Z2)
-- Terrain sim: 4min tempo / 3min low-cadence alternating
+IMPORTANT: Every pattern below MUST be encoded as discrete steps in intervals[]. Never describe a pattern in text without encoding it.
 
-### Cadence cues (include in description when used)
+Encodable patterns — use these:
+- Neuromuscular spins: 6-8 separate work steps of 10s@Z6 each, with 50s@Z1 recovery between. Encode each 10s burst as its own step.
+- Low-cadence strength: 3-5 repeats of 6min@Z3-Z4. Mention "55-65rpm" in description — no cadence in steps (Garmin doesn't enforce cadence).
+- Over-unders: strictly alternate 2min@95%FTP steps with 1min@105%FTP steps in a steps[] array (Build/Peak only).
+- Terrain sim: strictly alternate 4min@Z3 steps with 3min@Z2-low-cadence steps in a steps[] array.
+- Power ramp: increasing power steps e.g. 5min@180W → 5min@190W → 5min@200W (separate blocks, not one flat block).
+
+Do NOT use these (cannot be encoded in Garmin steps):
+- Cadence ladders — cadence targets are not displayed on most Garmin devices
+- Micro-shifts ±10W — too fine-grained, AI consistently fails to encode them
+
+### Cadence cues (description only, not enforced by device)
 - Z1-Z2: 85-95rpm | Sweetspot/threshold: 88-95rpm | VO2max: 90-100rpm
 - Low-cadence strength: 50-65rpm seated | Sprint/punch: 105-115rpm
 
