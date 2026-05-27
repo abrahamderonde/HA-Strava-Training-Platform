@@ -98,6 +98,8 @@ class GarminService:
             return {"stepTypeId": sid, "stepTypeKey": skey, "displayOrder": sid}
 
         def power_target(p_low, p_high):
+            if not p_low or not p_high or int(p_low) == 0 or int(p_high) == 0:
+                return NO_TARGET
             return {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone",
                     "displayOrder": 1, "targetValueOne": int(p_low), "targetValueTwo": int(p_high)}
 

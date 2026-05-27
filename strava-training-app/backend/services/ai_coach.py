@@ -306,14 +306,24 @@ Respond ONLY with valid JSON:
                     text = text[4:]
             result = json.loads(text.strip())
 
-            # Log what the AI generated so we can debug step generation
+            # Log and fix: ensure power_low/power_high exist on every interval
             for w in (result.get("workouts") or []):
                 for iv in (w.get("intervals") or []):
+                    # If AI used "power" instead of "power_low"/"power_high", fix it
+                    if iv.get("power") and not iv.get("power_low"):
+                        iv["power_low"] = iv["power"]
+                        iv["power_high"] = iv["power"]
+                    # If parent has no power but steps do, inherit from first step
+                    if not iv.get("power_low") and iv.get("steps"):
+                        first = next((s for s in iv["steps"] if s.get("power_low")), None)
+                        if first:
+                            iv["power_low"] = first["power_low"]
+                            iv["power_high"] = first.get("power_high", first["power_low"])
                     logger.info(
-                        "AI interval: type=%s dur=%s repeats=%s has_steps=%s desc=%s",
+                        "AI interval: type=%s dur=%s repeats=%s power=%s-%s has_steps=%s",
                         iv.get("type"), iv.get("duration_seconds"),
-                        iv.get("repeats"), bool(iv.get("steps")),
-                        (iv.get("description") or "")[:80]
+                        iv.get("repeats"), iv.get("power_low"), iv.get("power_high"),
+                        bool(iv.get("steps"))
                     )
             return result
         except Exception as e:
