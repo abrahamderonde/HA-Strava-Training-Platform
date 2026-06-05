@@ -25,6 +25,7 @@ from .models.database import (
 )
 from .services.strava_service import StravaService
 from .services.garmin_service import GarminService
+from .services.garmin_import_service import GarminImportService
 from .services.intervals_service import IntervalsService
 from .services.intervals_service import IntervalsService
 from .services.ai_coach import AICoachService
@@ -70,6 +71,12 @@ async def lifespan(app: FastAPI):
         "cron", hour=2, minute=0,
         id="nightly_recalc"
     )
+    # Schedule nightly Garmin activity sync (1am)
+    scheduler.add_job(
+        nightly_garmin_sync,
+        "cron", hour=1, minute=0,
+        id="nightly_garmin_sync"
+    )
     scheduler.start()
     logger.info("Strava Training Platform started")
     yield
@@ -101,6 +108,24 @@ async def nightly_recalculate():
     async with AsyncSessionLocal() as db:
         await recalculate_pmc(db)
         await recalculate_power_curve_and_ftp(db)
+
+
+async def nightly_garmin_sync():
+    """Nightly job: import recent Garmin activities."""
+    from .models.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        try:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            result = await svc.import_recent(days=2)
+            logger.info("Nightly Garmin sync: %s", result)
+        except Exception as e:
+            logger.error("Nightly Garmin sync failed: %s", e)
 
 
 async def recalculate_pmc(db: AsyncSession):
@@ -281,7 +306,65 @@ async def strava_status(db: AsyncSession = Depends(get_db)):
     return await service.get_auth_status()
 
 
-# ─── Strava Webhook ──────────────────────────────────────────────────────────
+# ─── Garmin Import ────────────────────────────────────────────────────────────
+
+@app.get("/trainiq/garmin/status")
+async def garmin_import_status(db: AsyncSession = Depends(get_db)):
+    """Check if Garmin tokens are available for activity import."""
+    svc = GarminImportService(
+        CONFIG.get("garmin_email", ""),
+        CONFIG.get("garmin_password", ""),
+        db,
+    )
+    return await svc.get_auth_status()
+
+
+@app.post("/trainiq/garmin/import-recent")
+async def garmin_import_recent(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Import activities from the last 14 days from Garmin Connect."""
+    async def _import():
+        ftp = await get_current_ftp(db)
+        svc = GarminImportService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+            db,
+            ftp=ftp,
+        )
+        result = await svc.import_recent(days=14)
+        logger.info("Garmin recent import: %s", result)
+        if result.get("imported", 0) > 0:
+            await recalculate_pmc(db)
+    background_tasks.add_task(_import)
+    return {"status": "Import started", "note": "Check logs for progress"}
+
+
+@app.post("/trainiq/garmin/import-history")
+async def garmin_import_history(
+    background_tasks: BackgroundTasks,
+    days: int = 365,
+    db: AsyncSession = Depends(get_db),
+):
+    """Import full activity history from Garmin Connect."""
+    async def _import():
+        ftp = await get_current_ftp(db)
+        svc = GarminImportService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+            db,
+            ftp=ftp,
+        )
+        result = await svc.import_history(days=days)
+        logger.info("Garmin history import: %s", result)
+        if result.get("imported", 0) > 0:
+            await recalculate_pmc(db)
+    background_tasks.add_task(_import)
+    return {"status": f"History import started for last {days} days"}
+
+
+
 
 @app.get("/trainiq/strava/webhook")
 async def webhook_verify(
@@ -1389,12 +1472,157 @@ async def get_planned_workouts(
             "intervals": w.intervals,
             "exported_to_garmin": w.exported_to_garmin,
             "garmin_workout_id": w.garmin_workout_id,
+            "completed": w.completed,
+            "actual_tss": w.actual_tss,
+            "actual_duration_minutes": w.actual_duration_minutes,
+            "actual_activity_id": w.actual_activity_id,
         }
         for w in workouts
     ]
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+@app.post("/trainiq/planning/workouts/{workout_id}/mark")
+async def mark_workout(workout_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Mark a planned workout as completed or skipped, optionally with adjusted TSS/duration.
+    Creates a synthetic activity when marked done."""
+    data = await request.json()
+    completed = data.get("completed")          # True = done, False = skipped
+    actual_tss = data.get("actual_tss")        # override if different from plan
+    actual_duration = data.get("actual_duration_minutes")
+
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    workout.completed = completed
+    workout.actual_tss = actual_tss
+    workout.actual_duration_minutes = actual_duration
+
+    if completed:
+        # Create synthetic activity from planned workout
+        tss = actual_tss or workout.target_tss or 50
+        duration = (actual_duration or workout.target_duration_minutes or 60) * 60
+        ftp = await get_current_ftp(db)
+        # Back-calculate intensity_factor from TSS
+        if_val = ((tss * ftp * 3600) / (duration * ftp * 100)) ** 0.5 if duration > 0 else 0.7
+        avg_power = if_val * ftp
+
+        # Delete previous synthetic activity if re-marking
+        if workout.actual_activity_id:
+            old = await db.execute(select(Activity).where(Activity.id == workout.actual_activity_id))
+            old_act = old.scalar_one_or_none()
+            if old_act:
+                await db.delete(old_act)
+
+        activity = Activity(
+            strava_id=None,
+            name=workout.title,
+            sport_type="VirtualRide" if getattr(workout, 'indoor', True) else "Ride",
+            start_date=workout.date,
+            elapsed_time=int(duration),
+            moving_time=int(duration),
+            distance=0,
+            average_watts=avg_power,
+            normalized_power=avg_power * 1.05,
+            intensity_factor=round(if_val, 3),
+            tss=tss,
+            trainer=True,
+            commute=False,
+            synthetic=True,
+        )
+        db.add(activity)
+        await db.flush()
+        workout.actual_activity_id = activity.id
+        logger.info("Created synthetic activity for workout '%s' TSS=%.0f", workout.title, tss)
+
+    elif not completed and workout.actual_activity_id:
+        # Skipped — remove synthetic activity if it exists
+        old = await db.execute(select(Activity).where(Activity.id == workout.actual_activity_id))
+        old_act = old.scalar_one_or_none()
+        if old_act and old_act.synthetic:
+            await db.delete(old_act)
+        workout.actual_activity_id = None
+
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"status": "ok", "completed": completed, "workout_id": workout_id}
+
+
+@app.post("/trainiq/planning/workouts/{workout_id}/unmark")
+async def unmark_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Reset a workout back to unplanned state (remove done/skipped mark)."""
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    if workout.actual_activity_id:
+        old = await db.execute(select(Activity).where(Activity.id == workout.actual_activity_id))
+        old_act = old.scalar_one_or_none()
+        if old_act and old_act.synthetic:
+            await db.delete(old_act)
+
+    workout.completed = None
+    workout.actual_tss = None
+    workout.actual_duration_minutes = None
+    workout.actual_activity_id = None
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"status": "ok"}
+
+
+@app.post("/trainiq/planning/workouts/add-manual")
+async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_db)):
+    """Add an unplanned manual activity directly to the PMC (no planned workout needed)."""
+    data = await request.json()
+    date_str = data.get("date")
+    title = data.get("title", "Manual activity")
+    tss = float(data.get("tss", 50))
+    duration_min = int(data.get("duration_minutes", 60))
+    sport_type = data.get("sport_type", "Ride")
+
+    ftp = await get_current_ftp(db)
+    duration_s = duration_min * 60
+    if_val = ((tss * ftp * 3600) / (duration_s * ftp * 100)) ** 0.5 if duration_s > 0 else 0.7
+
+    activity = Activity(
+        strava_id=None,
+        name=title,
+        sport_type=sport_type,
+        start_date=datetime.fromisoformat(date_str) if date_str else datetime.now(),
+        elapsed_time=duration_s,
+        moving_time=duration_s,
+        distance=0,
+        average_watts=if_val * ftp,
+        tss=tss,
+        trainer=False,
+        commute=False,
+        synthetic=True,
+    )
+    db.add(activity)
+    await db.commit()
+    await db.refresh(activity)
+    await recalculate_pmc(db)
+    return {"status": "ok", "activity_id": activity.id, "tss": tss}
+
+
+@app.delete("/trainiq/planning/workouts/manual/{activity_id}")
+async def delete_manual_activity(activity_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a manual synthetic activity."""
+    result = await db.execute(select(Activity).where(
+        Activity.id == activity_id, Activity.synthetic == True
+    ))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found or not synthetic")
+    await db.delete(activity)
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"status": "deleted"}
+
+
+
 
 async def get_current_ftp(db: AsyncSession) -> float:
     """Returns FTP for TSS/zone calculations.

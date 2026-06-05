@@ -26,10 +26,15 @@ async def init_db():
             "ALTER TABLE training_goals ADD COLUMN global_plan JSON",
             "ALTER TABLE training_goals ADD COLUMN global_plan_generated_at DATETIME",
             "ALTER TABLE training_goals ADD COLUMN last_week_settings JSON",
+            "ALTER TABLE training_goals ADD COLUMN last_cp_notified FLOAT",
             "ALTER TABLE activities ADD COLUMN commute BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN trainer BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN synthetic BOOLEAN DEFAULT 0",
             "ALTER TABLE planned_workouts ADD COLUMN icu_description TEXT",
+            "ALTER TABLE planned_workouts ADD COLUMN completed BOOLEAN DEFAULT NULL",
+            "ALTER TABLE planned_workouts ADD COLUMN actual_tss FLOAT DEFAULT NULL",
+            "ALTER TABLE planned_workouts ADD COLUMN actual_duration_minutes INTEGER DEFAULT NULL",
+            "ALTER TABLE planned_workouts ADD COLUMN actual_activity_id INTEGER DEFAULT NULL",
         ]
         for sql in migrations:
             try:
@@ -127,11 +132,15 @@ class PlannedWorkout(Base):
     target_tss = Column(Float, nullable=True)
     target_duration_minutes = Column(Integer, nullable=True)
     target_if = Column(Float, nullable=True)  # intensity factor
-    intervals = Column(JSON, nullable=True)   # structured interval data
-    icu_description = Column(Text, nullable=True)  # intervals.icu description language
+    intervals = Column(JSON, nullable=True)
+    icu_description = Column(Text, nullable=True)
     garmin_workout_id = Column(String, nullable=True)
     exported_to_garmin = Column(Boolean, default=False)
     goal_id = Column(Integer, nullable=True)
+    completed = Column(Boolean, nullable=True)
+    actual_tss = Column(Float, nullable=True)
+    actual_duration_minutes = Column(Integer, nullable=True)
+    actual_activity_id = Column(Integer, nullable=True)
 
 
 class TrainingGoal(Base):
@@ -152,6 +161,7 @@ class TrainingGoal(Base):
     global_plan = Column(JSON, nullable=True)         # [{week, phase, hours, tss, description}]
     global_plan_generated_at = Column(DateTime, nullable=True)
     last_week_settings = Column(JSON, nullable=True)  # remembered day settings from last planning
+    last_cp_notified = Column(Float, nullable=True)   # last CP value user was notified about
 
 
 class StravaToken(Base):
