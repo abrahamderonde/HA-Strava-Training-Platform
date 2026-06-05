@@ -1,6 +1,91 @@
 import { useState, useEffect } from 'react'
 
-export default function Settings() {
+function GarminImportCard() {
+  const [status, setStatus] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const [importing, setImporting] = useState(false)
+
+  useEffect(() => {
+    fetch('/trainiq/garmin/status').then(r => r.json()).then(setStatus).catch(() => {})
+  }, [])
+
+  const doImport = async (endpoint, label) => {
+    setImporting(true)
+    setMsg(`${label} started…`)
+    try {
+      const res = await fetch(`/trainiq/garmin/${endpoint}`, { method: 'POST' })
+      const d = await res.json()
+      setMsg(d.status || 'Started — check logs for progress')
+    } catch { setMsg('Request failed') }
+    setImporting(false)
+  }
+
+  const authenticated = status?.authenticated
+
+  return (
+    <div>
+      {/* Status */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: authenticated ? '#22c55e' : '#ef4444',
+          display: 'inline-block', flexShrink: 0
+        }} />
+        <span style={{ fontSize: 14 }}>
+          {authenticated
+            ? <>Tokens found — <span style={{ color: 'var(--muted)' }}>{status.files?.join(', ')}</span></>
+            : 'No tokens found'}
+        </span>
+      </div>
+
+      {!authenticated && (
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.7,
+                      background: 'var(--surface2)', borderRadius: 6, padding: '10px 12px' }}>
+          Run <code>example.py</code> from python-garminconnect on your PC, then copy the token file to HA:<br/>
+          <code style={{ color: 'var(--accent)' }}>
+            scp ~/.garminconnect/garmin_tokens.json root@homeassistant.local:/config/strava_training/garmin_tokens/
+          </code>
+        </div>
+      )}
+
+      {/* Import buttons */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => doImport('import-recent', 'Recent import')}
+          disabled={!authenticated || importing}
+        >
+          Sync last 14 days
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('import-history?days=365', 'Full history')}
+          disabled={!authenticated || importing}
+        >
+          Import full year
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('import-history?days=1825', '5-year history')}
+          disabled={!authenticated || importing}
+        >
+          Import 5 years
+        </button>
+      </div>
+
+      {msg && (
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>{msg}</div>
+      )}
+
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10, lineHeight: 1.6 }}>
+        Activities sync nightly at 1:00 AM automatically. Manual import runs in the background — large imports may take a few minutes.
+        Garmin activity IDs are stored separately from Strava — both sources can coexist.
+      </div>
+    </div>
+  )
+}
+
+
   const [status, setStatus] = useState(null)
   const [config, setConfig] = useState(null)
   const [haUrl, setHaUrl] = useState(() => localStorage.getItem('ha_url') || '')
@@ -33,9 +118,10 @@ export default function Settings() {
         body: JSON.stringify({ ftp: val }),
       })
       if (!res.ok) throw new Error('Save failed')
-      setGoalData(g => ({ ...(g || {}), current_ftp: val }))
-      // Refresh ftp data so CP vs FTP display updates
-      fetch('/trainiq/analytics/ftp').then(r => r.json()).then(setFtpData).catch(() => {})
+      // Refresh ftp data and reseed input
+      const fresh = await fetch('/trainiq/analytics/ftp').then(r => r.json())
+      setFtpData(fresh)
+      setFtpInput(String(Math.round(fresh.ftp)))
       setFtpMsg('FTP saved ✓')
       setTimeout(() => setFtpMsg(null), 3000)
     } catch { setFtpMsg('Save failed') }
@@ -56,19 +142,11 @@ export default function Settings() {
     setLoading(true)
     try {
       const callbackUrl = haUrl.trim() || window.location.origin
-      const fetchUrl = `/trainiq/strava/auth-url?ha_url=${encodeURIComponent(callbackUrl)}`
-      console.log('Fetching auth URL from:', fetchUrl)
-      const res = await fetch(fetchUrl)
-      console.log('Response status:', res.status)
+      const res = await fetch(`/trainiq/strava/auth-url?ha_url=${encodeURIComponent(callbackUrl)}`)
       const data = await res.json()
-      console.log('Auth URL data:', data)
-      if (data.url) {
-        window.location.href = data.url
-      } else {
-        setError('No URL returned. Check that Strava Client ID and Secret are configured.')
-      }
+      if (data.url) window.location.href = data.url
+      else setError('No URL returned. Check Strava Client ID and Secret.')
     } catch (e) {
-      console.error('Connect Strava error:', e)
       setError(`Error: ${e.message}`)
     } finally {
       setLoading(false)
@@ -83,64 +161,23 @@ export default function Settings() {
       </div>
 
       <div className="section-grid">
+        {/* Garmin Activity Import */}
+        <div className="card">
+          <div className="card-title">Garmin Activity Import</div>
+          <GarminImportCard />
+        </div>
+
         {/* Strava Connection */}
         <div className="card">
-          <div className="card-title">Strava Connection</div>
-
-          {config && !config.strava_configured && (
-            <div style={{ background: 'rgba(249,115,22,0.1)', border: '1px solid var(--accent)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: 'var(--accent)' }}>
-              ⚠️ Strava Client ID and Secret not configured in HA app settings.
-            </div>
-          )}
-
-          {error && (
-            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#ef4444' }}>
-              {error}
-            </div>
-          )}
+          <div className="card-title" style={{ color: 'var(--muted)' }}>Strava Connection <span style={{ fontSize: 11, fontWeight: 400 }}>(deprecated — Strava API now requires paid access)</span></div>
 
           {status?.authenticated ? (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <span className="status-dot" />
-                <span style={{ fontSize: 14 }}>Connected as <strong>{status.athlete_name}</strong></span>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-                New activities sync automatically. Use "Sync Strava" on the dashboard to import history.
-              </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              Previously connected as <strong>{status.athlete_name}</strong>. Historical data already imported is retained.
             </div>
           ) : (
-            <div>
-              <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
-                Connect your Strava account to import activities.
-              </p>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-                  Home Assistant URL (for Strava redirect callback)
-                </label>
-                <input
-                  type="text"
-                  value={haUrl}
-                  onChange={e => setHaUrl(e.target.value)}
-                  placeholder="homeassistant.local:8088"
-                  style={{
-                    width: '100%', padding: '8px 10px', borderRadius: 6,
-                    border: '1px solid var(--border)', background: 'var(--surface2)',
-                    color: 'var(--text)', fontSize: 13, boxSizing: 'border-box'
-                  }}
-                />
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  Use port 8088 (direct app port, not 8123). In Strava API settings set Authorization Callback Domain to just the hostname without port.
-                </div>
-              </div>
-              <button
-                className="btn btn-primary"
-                onClick={connectStrava}
-                disabled={loading}
-                style={{ opacity: loading ? 0.6 : 1 }}
-              >
-                {loading ? 'Connecting...' : 'Connect Strava'}
-              </button>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              Strava API access now requires a paid subscription. Use Garmin Import above instead.
             </div>
           )}
         </div>

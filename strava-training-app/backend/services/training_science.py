@@ -29,6 +29,21 @@ REST_HR_DEFAULT = 50
 # TSS Calculation
 # ---------------------------------------------------------------------------
 
+def calculate_normalized_power(power_stream: List[float]) -> Optional[float]:
+    """Calculate Normalized Power from a per-second power stream (Allen & Coggan)."""
+    if not power_stream or len(power_stream) < 30:
+        return None
+    try:
+        stream = np.array([max(0.0, float(p or 0)) for p in power_stream])
+        # 30-second rolling average
+        kernel = np.ones(30) / 30
+        rolling = np.convolve(stream, kernel, mode='valid')
+        # Raise to 4th power, mean, 4th root
+        return float(np.mean(rolling ** 4) ** 0.25)
+    except Exception:
+        return None
+
+
 def calculate_tss_from_power(
     power_stream: List[float],
     ftp: float,
