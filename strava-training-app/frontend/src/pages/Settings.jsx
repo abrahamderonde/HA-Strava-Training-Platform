@@ -86,6 +86,7 @@ function GarminImportCard() {
 }
 
 
+export default function Settings() {
   const [status, setStatus] = useState(null)
   const [config, setConfig] = useState(null)
   const [haUrl, setHaUrl] = useState(() => localStorage.getItem('ha_url') || '')
@@ -339,4 +340,4 @@ function GarminImportCard() {
       </div>
     </div>
   )
-
+}
