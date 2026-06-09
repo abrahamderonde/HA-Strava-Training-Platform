@@ -319,7 +319,24 @@ async def garmin_import_status(db: AsyncSession = Depends(get_db)):
     return await svc.get_auth_status()
 
 
-@app.post("/trainiq/garmin/import-recent")
+@app.post("/trainiq/garmin/cleanup-power-streams")
+async def cleanup_garmin_power_streams(db: AsyncSession = Depends(get_db)):
+    """One-time cleanup: wipe power_stream on all Garmin-imported activities
+    (strava_id < 0) where the stream data was garbage from get_activity_details."""
+    from sqlalchemy import update
+    result = await db.execute(
+        update(Activity)
+        .where(Activity.strava_id < 0)
+        .where(Activity.power_stream.isnot(None))
+        .values(power_stream=None)
+    )
+    await db.commit()
+    # Rebuild power curve without the bad streams
+    await recalculate_power_curve_and_ftp(db)
+    return {"status": "ok", "cleaned": result.rowcount}
+
+
+
 async def garmin_import_recent(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
