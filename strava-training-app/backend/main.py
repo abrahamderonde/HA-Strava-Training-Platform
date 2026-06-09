@@ -1575,7 +1575,7 @@ async def unmark_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/trainiq/activities/{activity_id}/toggle-commute")
 async def toggle_activity_commute(activity_id: int, db: AsyncSession = Depends(get_db)):
-    """Toggle the commute label on a synthetic activity."""
+    """Toggle the commute label on an activity."""
     result = await db.execute(select(Activity).where(Activity.id == activity_id))
     activity = result.scalar_one_or_none()
     if not activity:
@@ -1583,6 +1583,19 @@ async def toggle_activity_commute(activity_id: int, db: AsyncSession = Depends(g
     activity.commute = not bool(activity.commute)
     await db.commit()
     return {"status": "ok", "commute": activity.commute}
+
+
+@app.delete("/trainiq/activities/{activity_id}")
+async def delete_activity(activity_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete any activity from the database (use to remove duplicates)."""
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    await db.delete(activity)
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"status": "deleted", "name": activity.name}
 
 
 @app.post("/trainiq/planning/workouts/add-manual")
@@ -1673,6 +1686,7 @@ def _activity_to_dict(a: Activity) -> Dict:
         "has_power": a.has_power,
         "commute": a.commute,
         "trainer": a.trainer,
+        "synthetic": a.synthetic,
         "tss": a.tss,
         "np": a.np,
         "if_": a.if_,

@@ -326,25 +326,11 @@ export default function Calendar() {
                 {selectedActivities.map(a => (
                   <div key={a.id} style={{ background: 'var(--surface2)', borderRadius: 8,
                     padding: '12px 14px', marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{a.name}</div>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        {a.synthetic && (
-                          <button
-                            onClick={async () => {
-                              await fetch(`/trainiq/activities/${a.id}/toggle-commute`, { method: 'POST' })
-                              refresh()
-                            }}
-                            title={a.commute ? 'Remove commute label' : 'Mark as commute'}
-                            style={{ background: a.commute ? 'rgba(249,115,22,0.15)' : 'var(--bg)',
-                                     border: `1px solid ${a.commute ? 'var(--accent)' : 'var(--border)'}`,
-                                     borderRadius: 4, padding: '2px 7px', cursor: 'pointer',
-                                     fontSize: 10, color: a.commute ? 'var(--accent)' : 'var(--muted)' }}>
-                            🚲 {a.commute ? 'Commute' : 'Set commute'}
-                          </button>
-                        )}
-                        {a.synthetic && <span style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--bg)',
-                          padding: '2px 5px', borderRadius: 3 }}>synthetic</span>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{a.name}</div>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                        {a.synthetic && <span style={{ fontSize: 10, color: 'var(--muted)',
+                          background: 'var(--bg)', padding: '2px 5px', borderRadius: 3 }}>synthetic</span>}
                       </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
@@ -360,6 +346,31 @@ export default function Calendar() {
                           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{value}</div>
                         </div>
                       ))}
+                    </div>
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      <button
+                        onClick={async () => {
+                          await fetch(`/trainiq/activities/${a.id}/toggle-commute`, { method: 'POST' })
+                          refresh()
+                        }}
+                        style={{ background: a.commute ? 'rgba(249,115,22,0.15)' : 'var(--bg)',
+                                 border: `1px solid ${a.commute ? 'var(--accent)' : 'var(--border)'}`,
+                                 borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                                 fontSize: 11, color: a.commute ? 'var(--accent)' : 'var(--muted)' }}>
+                        🚲 {a.commute ? 'Commute ✓' : 'Set commute'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete "${a.name}"? This cannot be undone.`)) return
+                          await fetch(`/trainiq/activities/${a.id}`, { method: 'DELETE' })
+                          refresh()
+                        }}
+                        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                                 borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                                 fontSize: 11, color: '#ef4444' }}>
+                        🗑 Delete
+                      </button>
                     </div>
                   </div>
                 ))}

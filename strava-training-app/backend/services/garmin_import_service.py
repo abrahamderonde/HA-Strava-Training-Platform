@@ -177,36 +177,29 @@ class GarminImportService:
         if existing.scalar_one_or_none():
             return None  # Already imported
 
-        power_stream = None
-        if fetch_streams and parsed.get("average_watts"):
-            client = await self._get_client()
-            if client:
-                power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
-
-        # Calculate TSS
+        # Calculate TSS from average power (reliable) or HR fallback
         tss = None
-        np = None
-        intensity_factor = None
+        avg_p = parsed.get("average_watts")
+        elapsed = parsed["elapsed_time"]
 
-        if power_stream and len(power_stream) > 30:
-            from .training_science import calculate_normalized_power
-            np = calculate_normalized_power(power_stream)
-            if np and self.ftp > 0:
-                intensity_factor = np / self.ftp
-                duration_hours = parsed["elapsed_time"] / 3600
-                tss = (parsed["elapsed_time"] * np * intensity_factor) / (self.ftp * 3600) * 100
-        elif parsed.get("average_watts") and parsed["elapsed_time"] > 0:
-            # Fallback: estimate from avg power
-            avg_p = parsed["average_watts"]
+        if avg_p and avg_p > 0 and self.ftp > 0 and elapsed > 0:
             if_est = avg_p / self.ftp
-            tss = (parsed["elapsed_time"] * avg_p * if_est) / (self.ftp * 3600) * 100
+            tss = (elapsed * avg_p * if_est) / (self.ftp * 3600) * 100
         elif parsed.get("average_heartrate"):
             tss = estimate_tss_from_hr(
-                parsed["elapsed_time"],
+                elapsed,
                 parsed["average_heartrate"],
                 parsed.get("max_heartrate") or 185,
                 parsed["sport_type"]
             )
+
+        # Sanity cap — no activity can have >500 TSS
+        if tss and tss > 500:
+            logger.warning("TSS %.0f too high for %s, capping at 500", tss, parsed["name"])
+            tss = min(tss, 500)
+
+        # Use average_watts as NP approximation (no stream needed)
+        np_approx = round(avg_p * 1.05) if avg_p else None
 
         activity = Activity(
             strava_id=db_id,
@@ -217,15 +210,15 @@ class GarminImportService:
             moving_time=parsed["moving_time"],
             distance=parsed["distance"],
             average_watts=parsed.get("average_watts"),
-            weighted_avg_watts=np,
+            weighted_avg_watts=np_approx,
+            np=np_approx,
             average_heartrate=parsed.get("average_heartrate"),
             max_heartrate=parsed.get("max_heartrate"),
-            np=np,
             tss=tss,
             has_power=bool(parsed.get("average_watts")),
             trainer=parsed["trainer"],
             commute=parsed["commute"],
-            power_stream=power_stream,
+            power_stream=None,  # skip stream to avoid wrong values
             synthetic=False,
         )
 
