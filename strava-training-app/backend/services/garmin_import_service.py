@@ -25,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..models.database import Activity, TrainingMetrics
-from .training_science import calculate_mmp, calculate_pmc, estimate_tss_from_hr
+from .training_science import (
+    calculate_tss_from_power,
+    calculate_pmc,
+    estimate_tss_from_hr,
+    calculate_normalized_power,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +209,7 @@ class GarminImportService:
             )
 
         activity = Activity(
-            strava_id=db_id,  # Store Garmin ID as negative in strava_id field
+            strava_id=db_id,
             name=parsed["name"],
             sport_type=parsed["sport_type"],
             start_date=parsed["start_date"],
@@ -212,11 +217,12 @@ class GarminImportService:
             moving_time=parsed["moving_time"],
             distance=parsed["distance"],
             average_watts=parsed.get("average_watts"),
+            weighted_avg_watts=np,
             average_heartrate=parsed.get("average_heartrate"),
             max_heartrate=parsed.get("max_heartrate"),
-            normalized_power=np,
-            intensity_factor=intensity_factor,
+            np=np,
             tss=tss,
+            has_power=bool(parsed.get("average_watts")),
             trainer=parsed["trainer"],
             commute=parsed["commute"],
             power_stream=power_stream,
