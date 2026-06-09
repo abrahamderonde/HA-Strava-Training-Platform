@@ -1573,6 +1573,18 @@ async def unmark_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
+@app.post("/trainiq/activities/{activity_id}/toggle-commute")
+async def toggle_activity_commute(activity_id: int, db: AsyncSession = Depends(get_db)):
+    """Toggle the commute label on a synthetic activity."""
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    activity.commute = not bool(activity.commute)
+    await db.commit()
+    return {"status": "ok", "commute": activity.commute}
+
+
 @app.post("/trainiq/planning/workouts/add-manual")
 async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_db)):
     """Add an unplanned manual activity directly to the PMC (no planned workout needed)."""
@@ -1582,6 +1594,7 @@ async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_d
     tss = float(data.get("tss", 50))
     duration_min = int(data.get("duration_minutes", 60))
     sport_type = data.get("sport_type", "Ride")
+    commute = bool(data.get("commute", False))
 
     ftp = await get_current_ftp(db)
     duration_s = duration_min * 60
@@ -1599,7 +1612,7 @@ async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_d
         tss=tss,
         has_power=True,
         trainer=False,
-        commute=False,
+        commute=commute,
         synthetic=True,
     )
     db.add(activity)

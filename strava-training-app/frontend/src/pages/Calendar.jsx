@@ -100,6 +100,7 @@ function AddActivityPanel({ date, onDone }) {
   const [tss, setTss] = useState('')
   const [dur, setDur] = useState('')
   const [type, setType] = useState('Ride')
+  const [commute, setCommute] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const save = async () => {
@@ -110,10 +111,11 @@ function AddActivityPanel({ date, onDone }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: format(date, 'yyyy-MM-dd') + 'T12:00:00',
-        title: title || 'Manual activity',
+        title: title || (commute ? 'Commute' : 'Manual activity'),
         tss: parseFloat(tss),
         duration_minutes: parseInt(dur),
         sport_type: type,
+        commute,
       }),
     })
     setSaving(false)
@@ -150,6 +152,12 @@ function AddActivityPanel({ date, onDone }) {
           <option value="Walk">Walk</option>
           <option value="Other">Other</option>
         </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+                        color: 'var(--text)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={commute} onChange={e => setCommute(e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: 'var(--accent)' }} />
+          Mark as commute
+        </label>
         <button onClick={save} disabled={saving || !tss || !dur}
           style={{ padding: '5px 0', borderRadius: 4, background: 'var(--accent)',
                    color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer',
@@ -320,8 +328,24 @@ export default function Calendar() {
                     padding: '12px 14px', marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{a.name}</div>
-                      {a.synthetic && <span style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--bg)',
-                        padding: '2px 5px', borderRadius: 3 }}>synthetic</span>}
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        {a.synthetic && (
+                          <button
+                            onClick={async () => {
+                              await fetch(`/trainiq/activities/${a.id}/toggle-commute`, { method: 'POST' })
+                              refresh()
+                            }}
+                            title={a.commute ? 'Remove commute label' : 'Mark as commute'}
+                            style={{ background: a.commute ? 'rgba(249,115,22,0.15)' : 'var(--bg)',
+                                     border: `1px solid ${a.commute ? 'var(--accent)' : 'var(--border)'}`,
+                                     borderRadius: 4, padding: '2px 7px', cursor: 'pointer',
+                                     fontSize: 10, color: a.commute ? 'var(--accent)' : 'var(--muted)' }}>
+                            🚲 {a.commute ? 'Commute' : 'Set commute'}
+                          </button>
+                        )}
+                        {a.synthetic && <span style={{ fontSize: 10, color: 'var(--muted)', background: 'var(--bg)',
+                          padding: '2px 5px', borderRadius: 3 }}>synthetic</span>}
+                      </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                       {[
