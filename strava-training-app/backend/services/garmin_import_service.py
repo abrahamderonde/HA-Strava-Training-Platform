@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..models.database import Activity, TrainingMetrics
-from .training_science import calculate_tss, calculate_pmc, estimate_tss_from_hr
+from .training_science import calculate_mmp, calculate_pmc, estimate_tss_from_hr
 
 logger = logging.getLogger(__name__)
 
