@@ -77,6 +77,12 @@ async def lifespan(app: FastAPI):
         "cron", hour=1, minute=0,
         id="nightly_garmin_sync"
     )
+    # Schedule nightly workout export to Garmin (11:45pm — exports tomorrow's workouts)
+    scheduler.add_job(
+        nightly_garmin_workout_export,
+        "cron", hour=23, minute=45,
+        id="nightly_garmin_workout_export"
+    )
     scheduler.start()
     logger.info("Strava Training Platform started")
     yield
@@ -108,6 +114,56 @@ async def nightly_recalculate():
     async with AsyncSessionLocal() as db:
         await recalculate_pmc(db)
         await recalculate_power_curve_and_ftp(db)
+
+
+async def nightly_garmin_workout_export():
+    """Nightly job at 23:45: export tomorrow's planned workouts to Garmin."""
+    from .models.database import AsyncSessionLocal
+    from datetime import date, timedelta
+    async with AsyncSessionLocal() as db:
+        try:
+            tomorrow = date.today() + timedelta(days=1)
+            await _export_workouts_for_date(db, tomorrow)
+        except Exception as e:
+            logger.error("Nightly workout export failed: %s", e)
+
+
+async def _export_workouts_for_date(db: AsyncSession, target_date):
+    """Export all unexported planned workouts for a given date to Garmin."""
+    from datetime import date as date_type
+    if isinstance(target_date, date_type):
+        start = datetime.combine(target_date, datetime.min.time())
+        end = datetime.combine(target_date, datetime.max.time())
+    else:
+        start = datetime.combine(target_date.date(), datetime.min.time())
+        end = datetime.combine(target_date.date(), datetime.max.time())
+
+    result = await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.date >= start)
+        .where(PlannedWorkout.date <= end)
+        .where(PlannedWorkout.exported_to_garmin == False)
+    )
+    workouts = result.scalars().all()
+    if not workouts:
+        return 0
+
+    garmin = GarminService(
+        CONFIG.get("garmin_email", ""),
+        CONFIG.get("garmin_password", ""),
+    )
+    exported = 0
+    for workout in workouts:
+        ids = await garmin.auto_export_workout(workout)
+        if ids.get("garmin_workout_id"):
+            workout.garmin_workout_id = ids["garmin_workout_id"]
+            workout.garmin_schedule_id = ids.get("garmin_schedule_id")
+            workout.exported_to_garmin = True
+            exported += 1
+    if exported:
+        await db.commit()
+        logger.info("Auto-exported %d workout(s) to Garmin for %s", exported, target_date)
+    return exported
 
 
 async def nightly_garmin_sync():
@@ -319,6 +375,7 @@ async def garmin_import_status(db: AsyncSession = Depends(get_db)):
     return await svc.get_auth_status()
 
 
+@app.get("/trainiq/garmin/cleanup-power-streams")
 @app.post("/trainiq/garmin/cleanup-power-streams")
 async def cleanup_garmin_power_streams(db: AsyncSession = Depends(get_db)):
     """One-time cleanup: wipe power_stream on all Garmin-imported activities
@@ -1312,16 +1369,23 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 
     # Delete existing planned workouts for this week before saving new ones
     week_end = week_start + timedelta(days=7)
-    await db.execute(
-        select(PlannedWorkout)
-        .where(PlannedWorkout.date >= week_start)
-        .where(PlannedWorkout.date < week_end)
-    )
     existing = (await db.execute(
         select(PlannedWorkout)
         .where(PlannedWorkout.date >= week_start)
         .where(PlannedWorkout.date < week_end)
     )).scalars().all()
+
+    # Delete old workouts from Garmin before replacing
+    garmin_to_clean = [(w.garmin_workout_id, getattr(w, 'garmin_schedule_id', None))
+                       for w in existing if w.garmin_workout_id]
+    if garmin_to_clean:
+        garmin = GarminService(CONFIG.get("garmin_email", ""), CONFIG.get("garmin_password", ""))
+        for gid, sid in garmin_to_clean:
+            try:
+                await garmin.delete_garmin_workout(gid, sid)
+            except Exception as e:
+                logger.warning("Could not delete Garmin workout %s: %s", gid, e)
+
     for wo in existing:
         await db.delete(wo)
 
@@ -1345,6 +1409,20 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     plan["saved_workout_ids"] = saved_ids
+
+    # Auto-export any workouts scheduled for today immediately
+    from datetime import date as date_type
+    today = date_type.today()
+    for wo in plan.get("workouts", []):
+        try:
+            wo_date = datetime.fromisoformat(wo["date"]).date()
+            if wo_date == today:
+                logger.info("Auto-exporting today's workout '%s' to Garmin", wo["title"])
+                await _export_workouts_for_date(db, today)
+                break
+        except Exception:
+            pass
+
     return plan
 
 
@@ -1440,7 +1518,7 @@ async def download_fit(workout_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/trainiq/planning/export-to-garmin/{workout_id}")
 async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
-    """Export a planned workout to Garmin Connect."""
+    """Export a planned workout to Garmin Connect. Replaces existing if already exported."""
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
     workout = result.scalar_one_or_none()
     if not workout:
@@ -1450,15 +1528,24 @@ async def export_to_garmin(workout_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Garmin credentials not configured")
 
     garmin = GarminService(CONFIG["garmin_email"], CONFIG["garmin_password"])
-    garmin_id = await garmin.export_workout(workout)
 
-    if garmin_id:
-        workout.garmin_workout_id = garmin_id
+    # Delete previous version from Garmin if it exists
+    if workout.garmin_workout_id:
+        await garmin.delete_from_garmin(
+            workout.garmin_workout_id,
+            getattr(workout, "garmin_schedule_id", None),
+        )
+        workout.garmin_workout_id = None
+        workout.garmin_schedule_id = None
+        workout.exported_to_garmin = False
+
+    ids = await garmin.auto_export_workout(workout)
+    if ids.get("garmin_workout_id"):
+        workout.garmin_workout_id = ids["garmin_workout_id"]
+        workout.garmin_schedule_id = ids.get("garmin_schedule_id")
         workout.exported_to_garmin = True
-        # Also schedule it on the correct date
-        await garmin.schedule_workout(garmin_id, workout.date)
         await db.commit()
-        return {"status": "exported", "garmin_id": garmin_id}
+        return {"status": "exported", "garmin_id": ids["garmin_workout_id"]}
     else:
         raise HTTPException(status_code=500, detail="Failed to export to Garmin")
 
@@ -1652,7 +1739,38 @@ async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_d
     return {"status": "ok", "activity_id": activity.id, "tss": tss}
 
 
-@app.delete("/trainiq/planning/workouts/manual/{activity_id}")
+@app.delete("/trainiq/planning/workouts/{workout_id}")
+async def delete_planned_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a planned workout and remove it from Garmin Connect."""
+    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
+    workout = result.scalar_one_or_none()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    # Remove from Garmin if exported
+    if workout.garmin_workout_id:
+        garmin = GarminService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+        )
+        await garmin.delete_garmin_workout(
+            workout.garmin_workout_id,
+            getattr(workout, "garmin_schedule_id", None),
+        )
+
+    # Remove linked synthetic activity
+    if workout.actual_activity_id:
+        act = await db.execute(select(Activity).where(Activity.id == workout.actual_activity_id))
+        old_act = act.scalar_one_or_none()
+        if old_act and old_act.synthetic:
+            await db.delete(old_act)
+
+    await db.delete(workout)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+
 async def delete_manual_activity(activity_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a manual synthetic activity."""
     result = await db.execute(select(Activity).where(

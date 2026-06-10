@@ -1,30 +1,68 @@
 # TrainIQ — Enhancement Wishlist
 
-## 0. Known bugs
-**Priority:** High
+---
+
+## 1. Main dashboard
+**Priority:** low
+**Status:** Open
+
+Merge with PMC. Little added value of PMC. 
+Requirements.
+Show graph as in PMC. This one is more clear
+Show selectors for selected time
+
+New: When you go over the graph, you see the summary of that day.. TSS etc. Would be nice to also see the name of the activity of that day. If there are multiple it is sufficient to show only the activity with the largest TSS. 
+
+---
+
+## 1. Power page
+**Priority:** low
+**Status:** Open
+
+Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you could do, based on your power curve.
+
+---
+
+## 2. Planning
+
+**Priority:** Medium
+**Status:** Open
+
+**2 FTP testing**
+- I will give you the template workout with steps
+- recommendate to do every 2 months
+- Show on planning page in red that FTP test is due
+- Make indoor/outdoor toggle a indoor/outdoor/FTP selector
+
+---
+
+## 7. Eddington map upgrades
+
+**Priority:** Low
+**Status:** Testing phase
+Testing result: Progress bar is stil to be done
+
+**progress bar**
+- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
+
+---
+
+## 5. Historical Commute Generator
+
+**Priority:** Medium
+**Status:** Finished
+
+Minor improvements. Hide from side bar, only access page from setting page, as this is not in the daily workflow
+
+---
+
+## 8. PMC upgrades
+
+**Priority:** Low
 **Status:** Pending
 
-- Workout generation misses details
-
----
-
-## 1. Workout planning improvements
-**Priority:** High
-**Status:** Finished
-
----
-
-## 2. Distance Progress Graphs
-
-**Priority:** Medium
-**Status:** Finished
-
----
-
-## 3. Fitness Progress Graph (Year-over-Year CTL)
-
-**Priority:** Medium
-**Status:** Finished
+**Show planning / future**
+- show future PMC curve based on detailed and global workout planning
 
 ---
 
@@ -55,46 +93,6 @@ Track bikes and components, log distance/hours per item, get alerts when service
 
 ---
 
-## 5. Historical Commute Generator
-
-**Priority:** Medium
-**Status:** Finished
-
-Minor improvements. Hide from side bar, only access page from setting page, as this is not in the daily workflow
-
----
-
-## 6. Gemeente map upgrades
-
-**Priority:** Low
-**Status:** Finished
-
----
-
-## 7. Eddington map upgrades
-
-**Priority:** Low
-**Status:** Testing phase
-Testing result: Progress bar is stil to be done
-
-**progress bar**
-- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
-
-**line n=n**
-- Show line where n_days = n_km. So you see the gap between the bars and the required line. 
-
----
-
-## 8. PMC upgrades
-
-**Priority:** Low
-**Status:** Pending
-
-**Show planning / future**
-- show future PMC curve based on detailed and global workout planning
-
----
-
 ## 9. Gui improvements for mobile
 
 **Priority:** Medium
@@ -106,10 +104,19 @@ Testing result: Progress bar is stil to be done
   
 ---
 
+## 9. Strava import cleanp
+
+**Priority:** low
+**Status:** Pending
+
+Cleanup all buttons and settings on pages for strava imports. Maybe keep backend just in case. 
+  
+---
+
 ## Other (not so concrete) ideas
 
 - Power plan generation (inspired on best bike split)
 
 ---
 
-*Last updated: April 2026*
+*Last updated: June 2026*

@@ -35,6 +35,7 @@ async def init_db():
             "ALTER TABLE planned_workouts ADD COLUMN actual_tss FLOAT DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_duration_minutes INTEGER DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_activity_id INTEGER DEFAULT NULL",
+            "ALTER TABLE planned_workouts ADD COLUMN garmin_schedule_id INTEGER DEFAULT NULL",
         ]
         for sql in migrations:
             try:
@@ -141,6 +142,7 @@ class PlannedWorkout(Base):
     actual_tss = Column(Float, nullable=True)
     actual_duration_minutes = Column(Integer, nullable=True)
     actual_activity_id = Column(Integer, nullable=True)
+    garmin_schedule_id = Column(Integer, nullable=True)  # ID from schedule_workout() for unscheduling
 
 
 class TrainingGoal(Base):

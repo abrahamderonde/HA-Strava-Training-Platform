@@ -443,9 +443,20 @@ export default function Planning() {
                           icu
                         </button>
                         <button className="btn btn-ghost btn-sm" onClick={() => exportToGarmin(w.id)}
-                          title="Export direct to Garmin Connect" disabled={w.exported_to_garmin}>
+                          title={w.exported_to_garmin ? 'Re-export to Garmin (replaces existing)' : 'Export to Garmin Connect'}
+                          style={{ color: w.exported_to_garmin ? '#22c55e' : undefined }}>
                           <Download size={13} />
-                          {w.exported_to_garmin ? 'Exported' : 'Garmin'}
+                          {w.exported_to_garmin ? 'Garmin ✓' : 'Garmin'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm"
+                          title="Delete workout (also removes from Garmin)"
+                          style={{ color: '#ef4444' }}
+                          onClick={async () => {
+                            if (!confirm(`Delete "${w.title}"?`)) return
+                            await fetch(`/trainiq/planning/workouts/${w.id}`, { method: 'DELETE' })
+                            loadWorkouts()
+                          }}>
+                          ✕
                         </button>
                       </div>
                     </div>
