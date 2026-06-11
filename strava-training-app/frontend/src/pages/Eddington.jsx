@@ -41,9 +41,12 @@ export default function Eddington() {
 
   const { e, next_e, rides_needed, total_riding_days, histogram, top_days } = data
 
-  // Progress toward next_e from last milestone
-  // How many rides of >=next_e do we already have?
+  // Progress from current E toward next E
+  // rides_needed = how many more ≥next_e rides still needed
+  // ridesHave = how many we've collected so far toward next_e
+  // Show as X/next_e where we started from (next_e - original_needed)
   const ridesHave = next_e - rides_needed
+  // Progress bar: from 0 (just reached E) to next_e (reached next_e)
   const progressPct = Math.round((ridesHave / next_e) * 100)
 
   // Add n=n reference data to histogram
@@ -85,7 +88,7 @@ export default function Eddington() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 14, color: 'var(--muted)' }}>Progress toward E{next_e}</span>
               <span style={{ fontSize: 14, fontFamily: 'var(--font-mono)' }}>
-                {ridesHave} / {next_e} rides
+                {ridesHave} / {next_e} rides ≥{next_e} km
               </span>
             </div>
             <div style={{ height: 10, background: 'var(--surface2)', borderRadius: 5, overflow: 'hidden' }}>
@@ -96,7 +99,7 @@ export default function Eddington() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
               <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600 }}>
                 {rides_needed > 0
-                  ? `${rides_needed} more ride${rides_needed > 1 ? 's' : ''} of ≥${next_e} km to reach E${next_e}`
+                  ? `${rides_needed} more ride${rides_needed > 1 ? 's' : ''} of ≥${next_e} km needed`
                   : `E${next_e} achieved! 🎉`}
               </span>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{progressPct}%</span>
@@ -205,6 +208,7 @@ export default function Eddington() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }
