@@ -394,6 +394,7 @@ async def cleanup_garmin_power_streams(db: AsyncSession = Depends(get_db)):
 
 
 
+@app.post("/trainiq/garmin/import-recent")
 async def garmin_import_recent(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -804,6 +805,23 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
         .order_by(TrainingMetrics.date)
     )
     metrics = result.scalars().all()
+
+    # Fetch top activity per day (highest TSS) for tooltip
+    act_result = await db.execute(
+        select(Activity)
+        .where(Activity.start_date >= cutoff)
+        .where(Activity.synthetic == False)
+        .where(Activity.tss > 0)
+        .order_by(Activity.tss.desc())
+    )
+    all_acts = act_result.scalars().all()
+    # Build day→name map (highest TSS activity per day)
+    day_activity = {}
+    for a in all_acts:
+        day = a.start_date.date().isoformat()
+        if day not in day_activity:
+            day_activity[day] = a.name
+
     return [
         {
             "date": m.date.isoformat(),
@@ -811,6 +829,7 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
             "atl": m.atl,
             "tsb": m.tsb,
             "tss": m.daily_tss,
+            "activity_name": day_activity.get(m.date.isoformat()),
         }
         for m in metrics
     ]
@@ -853,6 +872,7 @@ async def debug_garmin_tokens():
 
 
 
+@app.get("/trainiq/debug/power-stats")
 async def power_stats(db: AsyncSession = Depends(get_db)):
     """Debug: diagnose power curve and synthetic commute data."""
     cutoff_60 = datetime.now() - timedelta(days=60)
@@ -1238,6 +1258,7 @@ async def update_user_ftp(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 
+@app.post("/trainiq/planning/generate-global-plan")
 async def generate_global_plan(request: Request, db: AsyncSession = Depends(get_db)):
     """Generate or regenerate the phased global training plan for the active goal."""
     data = await request.json()
@@ -1771,6 +1792,7 @@ async def delete_planned_workout(workout_id: int, db: AsyncSession = Depends(get
 
 
 
+@app.delete("/trainiq/planning/workouts/manual/{activity_id}")
 async def delete_manual_activity(activity_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a manual synthetic activity."""
     result = await db.execute(select(Activity).where(
