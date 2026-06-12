@@ -928,7 +928,70 @@ async def power_stats(db: AsyncSession = Depends(get_db)):
 
 
 
-@app.get("/trainiq/analytics/pmc-all")
+@app.get("/trainiq/analytics/pmc-future")
+async def get_pmc_future(days: int = 60, db: AsyncSession = Depends(get_db)):
+    """Project future CTL/ATL/TSB based on planned workouts.
+    Returns both past (last 30 days) and future (next N days) for seamless chart overlay."""
+    import math
+
+    CTL_DECAY = math.exp(-1 / 42)
+    ATL_DECAY = math.exp(-1 / 7)
+    CTL_GAIN  = 1 - CTL_DECAY
+    ATL_GAIN  = 1 - ATL_DECAY
+
+    today = datetime.now().date()
+
+    # Get current CTL/ATL from latest TrainingMetrics
+    latest_result = await db.execute(
+        select(TrainingMetrics).order_by(TrainingMetrics.date.desc()).limit(1)
+    )
+    latest = latest_result.scalar_one_or_none()
+    if not latest:
+        return []
+
+    ctl = latest.ctl or 0
+    atl = latest.atl or 0
+
+    # Get planned workouts for the next N days
+    future_end = datetime.combine(today + timedelta(days=days), datetime.min.time())
+    future_start = datetime.combine(today, datetime.min.time())
+    pw_result = await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.date >= future_start)
+        .where(PlannedWorkout.date <= future_end)
+        .where(PlannedWorkout.completed != False)  # exclude skipped
+    )
+    planned = pw_result.scalars().all()
+
+    # Build day→TSS map from planned workouts
+    planned_tss = {}
+    for w in planned:
+        day = w.date.date() if hasattr(w.date, 'date') else w.date
+        tss = w.actual_tss or w.target_tss or 0
+        planned_tss[day] = planned_tss.get(day, 0) + tss
+
+    # Project forward day by day
+    projection = []
+    for i in range(days + 1):
+        day = today + timedelta(days=i)
+        tss = planned_tss.get(day, 0)
+        ctl = ctl * CTL_DECAY + tss * CTL_GAIN
+        atl = atl * ATL_DECAY + tss * ATL_GAIN
+        tsb = ctl - atl  # previous day's CTL - ATL (simplified)
+        projection.append({
+            "date": day.isoformat(),
+            "ctl": round(ctl, 1),
+            "atl": round(atl, 1),
+            "tsb": round(tsb, 1),
+            "tss": round(tss, 1),
+            "planned": True,
+            "has_workout": tss > 0,
+        })
+
+    return projection
+
+
+
 async def get_pmc_all(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(TrainingMetrics).order_by(TrainingMetrics.date)
@@ -1723,7 +1786,133 @@ async def delete_activity(activity_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "deleted", "name": activity.name}
 
 
-@app.post("/trainiq/planning/workouts/add-manual")
+@app.get("/trainiq/planning/ftp-test-due")
+async def ftp_test_due(db: AsyncSession = Depends(get_db)):
+    """Check if an FTP test is due (every 60 days).
+    Returns days since last test and whether test is due."""
+    # Look for activities named like FTP tests OR high-IF activities >15min
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.elapsed_time >= 20 * 60)  # at least 20min
+        .where(Activity.tss > 0)
+        .where(Activity.synthetic == False)
+        .order_by(Activity.start_date.desc())
+        .limit(200)
+    )
+    acts = result.scalars().all()
+
+    # Find last FTP test by name or by high IF (>1.05 for 20min = likely test)
+    last_test_date = None
+    for a in acts:
+        is_test = (
+            'ftp' in (a.name or '').lower() or
+            'test' in (a.name or '').lower() or
+            (a.if_ and a.if_ > 1.03 and a.elapsed_time >= 20 * 60)
+        )
+        if is_test:
+            last_test_date = a.start_date
+            break
+
+    days_since = None
+    if last_test_date:
+        days_since = (datetime.now() - last_test_date).days
+
+    due = days_since is None or days_since >= 60
+    return {
+        "due": due,
+        "days_since": days_since,
+        "last_test_date": last_test_date.isoformat() if last_test_date else None,
+        "days_until_due": max(0, 60 - days_since) if days_since is not None else 0,
+    }
+
+
+@app.post("/trainiq/planning/schedule-ftp-test")
+async def schedule_ftp_test(request: Request, db: AsyncSession = Depends(get_db)):
+    """Schedule an FTP test workout on a given date."""
+    data = await request.json()
+    date_str = data.get("date")
+    if not date_str:
+        raise HTTPException(status_code=400, detail="date required")
+
+    ftp = await get_current_ftp(db)
+    workout_date = datetime.fromisoformat(date_str)
+
+    # Build FTP test intervals with actual watt targets
+    def watts(pct):
+        return round(ftp * pct)
+
+    intervals = [
+        {"type": "warmup",   "duration_seconds": 300,  "power_low": watts(0.52), "power_high": watts(0.58)},
+        {"type": "work",     "duration_seconds": 240,  "power_low": watts(0.72), "power_high": watts(0.78)},
+        {"type": "work",     "duration_seconds": 120,  "power_low": watts(0.82), "power_high": watts(0.88)},
+        {"type": "work",     "duration_seconds": 60,   "power_low": watts(0.92), "power_high": watts(0.98)},
+        {"type": "work",     "duration_seconds": 60,   "power_low": watts(0.97), "power_high": watts(1.03)},
+        {"type": "work",     "duration_seconds": 30,   "power_low": watts(1.07), "power_high": watts(1.13)},
+        {"type": "recovery", "duration_seconds": 180,  "power_low": watts(0.52), "power_high": watts(0.58)},
+        # 2x neuromuscular spins
+        {"type": "work",     "duration_seconds": 6,    "power_low": watts(1.90), "power_high": watts(2.10)},
+        {"type": "recovery", "duration_seconds": 54,   "power_low": watts(0.52), "power_high": watts(0.58)},
+        {"type": "work",     "duration_seconds": 6,    "power_low": watts(1.90), "power_high": watts(2.10)},
+        {"type": "recovery", "duration_seconds": 54,   "power_low": watts(0.52), "power_high": watts(0.58)},
+        # Settle
+        {"type": "recovery", "duration_seconds": 120,  "power_low": watts(0.52), "power_high": watts(0.58)},
+        # Optional extra block (reach optimal start)
+        {"type": "recovery", "duration_seconds": 360,  "power_low": watts(0.52), "power_high": watts(0.58)},
+        # THE TEST — 20min @ 110% (aim slightly above expected FTP)
+        {"type": "work",     "duration_seconds": 1200, "power_low": watts(1.07), "power_high": watts(1.13)},
+        # Cooldown
+        {"type": "cooldown", "duration_seconds": 600,  "power_low": watts(0.52), "power_high": watts(0.58)},
+    ]
+
+    total_s = sum(i["duration_seconds"] for i in intervals)
+    target_tss = round((total_s * (ftp * 1.05) * (1.05)) / (ftp * 3600) * 100)
+
+    workout = PlannedWorkout(
+        date=workout_date,
+        title="FTP Test",
+        description=(
+            f"Structured FTP test. Warmup: 5min easy → 4min tempo → 2min threshold → "
+            f"1min VO2 → 1min FTP → 30sec sprint → 3min easy → 2x 6sec sprint. "
+            f"Optional 6min extra block to reach optimal start point. "
+            f"TEST: 20min @ {watts(1.07)}-{watts(1.13)}W (110% current FTP). "
+            f"Average power over 20min × 0.95 = new FTP estimate. "
+            f"Cooldown: 10min easy."
+        ),
+        workout_type="threshold",
+        target_tss=target_tss,
+        target_duration_minutes=total_s // 60,
+        target_if=1.05,
+        intervals=intervals,
+        indoor=data.get("indoor", True),
+    )
+    db.add(workout)
+    await db.commit()
+    await db.refresh(workout)
+
+    # Auto-export to Garmin if tomorrow or today
+    today = datetime.now().date()
+    if workout_date.date() <= today + timedelta(days=1):
+        garmin = GarminService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+        )
+        result = await garmin.auto_export_workout(workout)
+        if result.get("garmin_workout_id"):
+            workout.garmin_workout_id = result["garmin_workout_id"]
+            workout.garmin_schedule_id = result.get("garmin_schedule_id")
+            workout.exported_to_garmin = True
+            await db.commit()
+
+    return {
+        "status": "ok",
+        "workout_id": workout.id,
+        "date": date_str,
+        "target_watts": f"{watts(1.07)}-{watts(1.13)}W",
+        "exported_to_garmin": workout.exported_to_garmin,
+    }
+
+
+
 async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_db)):
     """Add an unplanned manual activity directly to the PMC (no planned workout needed)."""
     data = await request.json()

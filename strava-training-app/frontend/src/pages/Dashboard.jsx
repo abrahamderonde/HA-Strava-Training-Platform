@@ -51,6 +51,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Dashboard() {
   const [pmc, setPmc]         = useState([])
+  const [future, setFuture]   = useState([])
   const [ftp, setFtp]         = useState(null)
   const [activities, setActivities] = useState([])
   const [days, setDays]       = useState(120)
@@ -62,10 +63,12 @@ export default function Dashboard() {
     setLoading(true)
     Promise.all([
       fetch(`/trainiq/analytics/pmc?days=${days}`).then(r => r.json()).catch(() => []),
+      fetch('/trainiq/analytics/pmc-future?days=60').then(r => r.json()).catch(() => []),
       fetch('/trainiq/analytics/ftp').then(r => r.json()).catch(() => ({})),
       fetch('/trainiq/activities?per_page=7').then(r => r.json()).catch(() => []),
-    ]).then(([pmcData, ftpData, actData]) => {
+    ]).then(([pmcData, futureData, ftpData, actData]) => {
       setPmc(Array.isArray(pmcData) ? pmcData : [])
+      setFuture(Array.isArray(futureData) ? futureData : [])
       setFtp(ftpData)
       setActivities(Array.isArray(actData) ? actData : [])
       setLoading(false)
@@ -81,6 +84,19 @@ export default function Dashboard() {
   const tsbLabel = latest
     ? latest.tsb > 5 ? 'Race ready' : latest.tsb < -20 ? 'Fatigued' : 'Training'
     : '—'
+
+  // Combine past + future into one chart dataset
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const chartData = [
+    ...pmc.map(d => ({ ...d, future_ctl: null, future_atl: null, future_tsb: null })),
+    // overlap today's point so lines connect
+    ...future.slice(1).map(d => ({
+      date: d.date,
+      ctl: null, atl: null, tsb: null, tss: d.tss,
+      future_ctl: d.ctl, future_atl: d.atl, future_tsb: d.tsb,
+      has_workout: d.has_workout,
+    })),
+  ]
 
   const triggerImport = async () => {
     setImporting(true)
@@ -145,24 +161,39 @@ export default function Dashboard() {
             color: 'var(--muted)' }}>Loading…</div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={pmc} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }}
                 tickFormatter={d => format(parseISO(d), 'd MMM')}
-                interval={Math.max(1, Math.floor(pmc.length / 8))} />
+                interval={Math.max(1, Math.floor(chartData.length / 8))} />
               <YAxis yAxisId="load" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={36} />
               <YAxis yAxisId="tss" orientation="right" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={36} />
               <Tooltip content={<CustomTooltip />} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine yAxisId="load" y={0} stroke="var(--border)" />
+              <ReferenceLine yAxisId="load" x={todayStr}
+                stroke="rgba(255,255,255,0.3)" strokeDasharray="4 2"
+                label={{ value: 'Today', position: 'top', fontSize: 10, fill: 'var(--muted)' }} />
+              {/* Past bars */}
               <Bar yAxisId="tss" dataKey="tss" name="TSS" fill="rgba(99,102,241,0.25)"
                 radius={[2,2,0,0]} />
+              {/* Past lines */}
               <Line yAxisId="load" type="monotone" dataKey="ctl" name="CTL"
-                stroke="var(--accent2)" strokeWidth={2} dot={false} />
+                stroke="var(--accent2)" strokeWidth={2} dot={false} connectNulls={false} />
               <Line yAxisId="load" type="monotone" dataKey="atl" name="ATL"
-                stroke="#ef4444" strokeWidth={2} dot={false} />
+                stroke="#ef4444" strokeWidth={2} dot={false} connectNulls={false} />
               <Line yAxisId="load" type="monotone" dataKey="tsb" name="TSB"
-                stroke="#22c55e" strokeWidth={2} dot={false} strokeDasharray="4 2" />
+                stroke="#22c55e" strokeWidth={2} dot={false} strokeDasharray="4 2" connectNulls={false} />
+              {/* Future projection lines (dashed) */}
+              <Line yAxisId="load" type="monotone" dataKey="future_ctl" name="CTL (plan)"
+                stroke="var(--accent2)" strokeWidth={1.5} dot={false}
+                strokeDasharray="6 3" strokeOpacity={0.6} connectNulls={false} legendType="none" />
+              <Line yAxisId="load" type="monotone" dataKey="future_atl" name="ATL (plan)"
+                stroke="#ef4444" strokeWidth={1.5} dot={false}
+                strokeDasharray="6 3" strokeOpacity={0.6} connectNulls={false} legendType="none" />
+              <Line yAxisId="load" type="monotone" dataKey="future_tsb" name="TSB (plan)"
+                stroke="#22c55e" strokeWidth={1.5} dot={false}
+                strokeDasharray="6 3" strokeOpacity={0.6} connectNulls={false} legendType="none" />
             </ComposedChart>
           </ResponsiveContainer>
         )}

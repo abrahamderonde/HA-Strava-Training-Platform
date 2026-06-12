@@ -27,10 +27,34 @@ export default function Planning() {
   const [status, setStatus] = useState(null)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [weeklyHours, setWeeklyHours] = useState(8)
+  const [ftpTestDue, setFtpTestDue] = useState(null)
+  const [schedulingFtpTest, setSchedulingFtpTest] = useState(false)
   const [newGoal, setNewGoal] = useState({
     event_name: '', event_date: '', event_distance_km: '',
     event_elevation_m: '', goal_description: '', weekly_hours: 8
   })
+
+  useEffect(() => {
+    fetch('/trainiq/planning/ftp-test-due')
+      .then(r => r.json()).then(setFtpTestDue).catch(() => {})
+  }, [])
+
+  const scheduleFtpTest = async (date, indoor = true) => {
+    setSchedulingFtpTest(true)
+    setStatus('Scheduling FTP test…')
+    try {
+      const res = await fetch('/trainiq/planning/schedule-ftp-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: date + 'T10:00:00', indoor }),
+      })
+      const d = await res.json()
+      setStatus(`FTP test scheduled · Target: ${d.target_watts}${d.exported_to_garmin ? ' · Garmin ✓' : ''}`)
+      loadWorkouts()
+      setFtpTestDue(p => ({ ...p, due: false }))
+    } catch { setStatus('Failed to schedule FTP test') }
+    setSchedulingFtpTest(false)
+  }
 
   useEffect(() => {
     loadGoals()
@@ -204,6 +228,47 @@ export default function Planning() {
           + New Goal
         </button>
       </div>
+
+      {/* FTP Test reminder banner */}
+      {ftpTestDue?.due && (
+        <div style={{
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)',
+          borderLeft: '4px solid #ef4444', borderRadius: 8,
+          padding: '12px 16px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          flexWrap: 'wrap',
+        }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#ef4444', marginBottom: 3 }}>
+              🔴 FTP Test Due
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              {ftpTestDue.days_since == null
+                ? 'No FTP test found in history.'
+                : `Last test was ${ftpTestDue.days_since} days ago (recommended every 60 days).`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              className="btn btn-sm"
+              disabled={schedulingFtpTest}
+              onClick={() => scheduleFtpTest(format(new Date(), 'yyyy-MM-dd'), true)}
+              style={{ background: '#ef4444', color: '#fff', border: 'none',
+                       borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12 }}>
+              {schedulingFtpTest ? 'Scheduling…' : '📅 Schedule for today (indoor)'}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                const d = format(addDays(new Date(), 1), 'yyyy-MM-dd')
+                scheduleFtpTest(d, false)
+              }}
+              style={{ fontSize: 12 }}>
+              Tomorrow (outdoor)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* New goal form */}
       {showGoalForm && (

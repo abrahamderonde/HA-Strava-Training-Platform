@@ -209,5 +209,6 @@ export default function Eddington() {
         </div>
       )}
     </div>
+    </div>
   )
 }
