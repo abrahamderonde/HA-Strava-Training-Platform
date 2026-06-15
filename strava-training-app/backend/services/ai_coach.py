@@ -133,7 +133,7 @@ Respond ONLY with valid JSON:
 
         try:
             message = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -295,7 +295,7 @@ Respond ONLY with valid JSON:
 
         try:
             message = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -339,7 +339,7 @@ Distance: {goal.event_distance_km}km, elevation: {goal.event_elevation_m}m.
 Write 2-3 sentences on recommended training phases. Be specific and concise."""
         try:
             message = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=300,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -347,3 +347,4 @@ Write 2-3 sentences on recommended training phases. Be specific and concise."""
         except Exception as e:
             logger.error("Goal summary failed: %s", e)
             return None
+# model: claude-sonnet-4-6 (updated 2026-06-15)
