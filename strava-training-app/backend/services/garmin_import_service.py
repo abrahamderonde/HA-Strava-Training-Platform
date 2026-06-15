@@ -89,6 +89,18 @@ class GarminImportService:
 
     def _parse_activity(self, raw: Dict) -> Optional[Dict]:
         """Parse a raw Garmin activity dict into our Activity field dict."""
+        def safe_float(val, default=None):
+            try:
+                return float(val) if val is not None and val != '' else default
+            except (TypeError, ValueError):
+                return default
+
+        def safe_int(val, default=0):
+            try:
+                return int(float(val)) if val is not None and val != '' else default
+            except (TypeError, ValueError):
+                return default
+
         try:
             garmin_id = raw.get("activityId")
             if not garmin_id:
@@ -105,18 +117,15 @@ class GarminImportService:
             except Exception:
                 start_date = datetime.now()
 
-            # Duration — Garmin gives seconds as float
-            elapsed = int(raw.get("duration") or raw.get("elapsedDuration") or 0)
-            moving = int(raw.get("movingDuration") or elapsed)
-            distance = float(raw.get("distance") or 0)  # meters
+            elapsed  = safe_int(raw.get("duration") or raw.get("elapsedDuration"))
+            moving   = safe_int(raw.get("movingDuration") or elapsed) or elapsed
+            distance = safe_float(raw.get("distance"), 0)
 
-            avg_power = raw.get("avgPower") or raw.get("averagePower")
-            avg_hr = raw.get("averageHR") or raw.get("avgHr")
-            max_hr = raw.get("maxHR") or raw.get("maxHr")
-            is_trainer = bool(raw.get("trainer") or type_key == "indoor_cycling" or type_key == "virtual_ride")
+            avg_power = safe_float(raw.get("avgPower") or raw.get("averagePower"))
+            avg_hr    = safe_float(raw.get("averageHR") or raw.get("avgHr"))
+            max_hr    = safe_float(raw.get("maxHR") or raw.get("maxHr"))
+            is_trainer = bool(raw.get("trainer") or type_key in ("indoor_cycling", "virtual_ride"))
             is_commute = bool(raw.get("commute", False))
-            calories = raw.get("calories")
-            elevation = raw.get("elevationGain")
 
             return {
                 "garmin_id": int(garmin_id),
@@ -127,13 +136,11 @@ class GarminImportService:
                 "elapsed_time": elapsed,
                 "moving_time": moving,
                 "distance": distance,
-                "average_watts": float(avg_power) if avg_power else None,
-                "average_heartrate": float(avg_hr) if avg_hr else None,
-                "max_heartrate": float(max_hr) if max_hr else None,
+                "average_watts": avg_power,
+                "average_heartrate": avg_hr,
+                "max_heartrate": max_hr,
                 "trainer": is_trainer,
                 "commute": is_commute,
-                "calories": float(calories) if calories else None,
-                "total_elevation_gain": float(elevation) if elevation else None,
             }
         except Exception as e:
             logger.warning("Failed to parse activity %s: %s", raw.get("activityId"), e)

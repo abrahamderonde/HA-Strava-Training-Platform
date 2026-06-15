@@ -824,12 +824,14 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
 
     return [
         {
-            "date": m.date.isoformat(),
+            "date": m.date.date().isoformat() if hasattr(m.date, 'date') else m.date.isoformat()[:10],
             "ctl": m.ctl,
             "atl": m.atl,
             "tsb": m.tsb,
             "tss": m.daily_tss,
-            "activity_name": day_activity.get(m.date.isoformat()),
+            "activity_name": day_activity.get(
+                m.date.date().isoformat() if hasattr(m.date, 'date') else m.date.isoformat()[:10]
+            ),
         }
         for m in metrics
     ]
