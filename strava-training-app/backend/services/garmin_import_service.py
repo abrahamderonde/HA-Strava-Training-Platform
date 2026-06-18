@@ -186,37 +186,42 @@ class GarminImportService:
 
         # Calculate TSS from average power (reliable) or HR fallback
         tss = None
-        avg_p = parsed.get("average_watts")
-        elapsed = parsed["elapsed_time"]
+        try:
+            avg_p = float(parsed.get("average_watts") or 0) or None
+            elapsed = int(parsed.get("elapsed_time") or 0)
+            avg_hr = float(parsed.get("average_heartrate") or 0) or None
+            max_hr = float(parsed.get("max_heartrate") or 185)
+            ftp = float(self.ftp) if self.ftp else 200.0
 
-        if avg_p and avg_p > 0 and self.ftp > 0 and elapsed > 0:
-            if_est = avg_p / self.ftp
-            tss = (elapsed * avg_p * if_est) / (self.ftp * 3600) * 100
-        elif parsed.get("average_heartrate"):
-            tss = estimate_tss_from_hr(
-                elapsed,
-                parsed["average_heartrate"],
-                parsed.get("max_heartrate") or 185,
-                parsed["sport_type"]
-            )
+            if avg_p and avg_p > 0 and ftp > 0 and elapsed > 0:
+                if_est = avg_p / ftp
+                tss = (elapsed * avg_p * if_est) / (ftp * 3600) * 100
+            elif avg_hr and elapsed > 0:
+                tss = estimate_tss_from_hr(
+                    elapsed, avg_hr, max_hr or 185, parsed["sport_type"]
+                )
 
-        # Sanity cap — no activity can have >500 TSS
-        if tss and tss > 500:
-            logger.warning("TSS %.0f too high for %s, capping at 500", tss, parsed["name"])
-            tss = min(tss, 500)
+            # Sanity cap
+            if tss and tss > 500:
+                logger.warning("TSS %.0f too high for %s, capping at 500", tss, parsed["name"])
+                tss = 500.0
 
-        # Use average_watts as NP approximation (no stream needed)
-        np_approx = round(avg_p * 1.05) if avg_p else None
+            np_approx = round(avg_p * 1.05) if avg_p else None
+        except Exception as e:
+            logger.warning("TSS calculation failed for %s: %s", parsed.get("name"), e)
+            tss = None
+            np_approx = None
+            avg_p = None
 
         activity = Activity(
             strava_id=db_id,
             name=parsed["name"],
             sport_type=parsed["sport_type"],
             start_date=parsed["start_date"],
-            elapsed_time=parsed["elapsed_time"],
-            moving_time=parsed["moving_time"],
-            distance=parsed["distance"],
-            average_watts=parsed.get("average_watts"),
+            elapsed_time=int(parsed.get("elapsed_time") or 0),
+            moving_time=int(parsed.get("moving_time") or 0),
+            distance=float(parsed.get("distance") or 0),
+            average_watts=avg_p,
             weighted_avg_watts=np_approx,
             np=np_approx,
             average_heartrate=parsed.get("average_heartrate"),
