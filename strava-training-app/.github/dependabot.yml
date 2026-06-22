@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: pip
+    directory: /strava-training-addon/backend
+    schedule:
+      interval: monthly
+    ignore:
+      # Skip major version bumps — review those manually
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # Group scientific stack together — they need to be compatible
+      scientific:
+        patterns:
+          - "numpy"
+          - "scipy"
+          - "shapely"
+      # Group web framework together
+      web:
+        patterns:
+          - "fastapi"
+          - "uvicorn"
+          - "httpx"
+          - "python-multipart"
+
+  # npm / frontend dependencies
+  - package-ecosystem: npm
+    directory: /strava-training-addon/frontend
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Docker base image
+  - package-ecosystem: docker
+    directory: /strava-training-addon
+    schedule:
+      interval: monthly

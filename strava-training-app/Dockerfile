@@ -1,20 +1,25 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
+# Install Python 3.12 and build deps
+# Use python3.12 package explicitly to avoid Alpine shipping 3.14
 RUN apk add --no-cache \
-    python3 \
-    py3-pip \
+    python3.12 \
+    python3.12-dev \
+    py3.12-pip \
     nodejs \
     npm \
     gcc \
     musl-dev \
-    python3-dev \
     libffi-dev \
     openssl-dev \
     geos \
     geos-dev \
     g++ \
-    openblas-dev
+    openblas-dev \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python3.12 \
+    && ln -sf /usr/bin/pip3.12 /usr/local/bin/pip3
 
 WORKDIR /app
 
