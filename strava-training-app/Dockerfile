@@ -20,6 +20,7 @@ WORKDIR /app
 
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages \
+    --ignore-installed \
     --prefer-binary \
     -r requirements.txt
 
