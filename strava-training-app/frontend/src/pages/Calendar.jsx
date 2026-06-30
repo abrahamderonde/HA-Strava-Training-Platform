@@ -20,6 +20,70 @@ function StatusBadge({ completed }) {
 }
 
 // ── Mark workout panel ─────────────────────────────────────────────────
+// ── RPE input panel for activities without power/HR data ──────────────
+function RpePanel({ activity, onDone }) {
+  const [rpe, setRpe] = useState(activity.rpe || 5)
+  const [saving, setSaving] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    const res = await fetch(`/trainiq/activities/${activity.id}/set-rpe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rpe: parseFloat(rpe) }),
+    })
+    setSaving(false)
+    if (res.ok) { setOpen(false); onDone() }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{ background: activity.rpe ? 'rgba(168,85,247,0.15)' : 'var(--bg)',
+                 border: `1px solid ${activity.rpe ? '#a855f7' : 'var(--border)'}`,
+                 borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
+                 fontSize: 11, color: activity.rpe ? '#a855f7' : 'var(--muted)' }}>
+        💪 {activity.rpe ? `RPE ${activity.rpe}` : 'Set RPE'}
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 8, padding: '10px 12px', background: 'var(--bg)', borderRadius: 6,
+                  border: '1px solid var(--border)', width: '100%' }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+        Rate of Perceived Exertion (1=very easy, 10=max effort)
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <input type="range" min="1" max="10" step="0.5" value={rpe}
+          onChange={e => setRpe(e.target.value)}
+          style={{ flex: 1, accentColor: '#a855f7' }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, fontWeight: 700,
+                       color: '#a855f7', minWidth: 24, textAlign: 'right' }}>{rpe}</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10,
+                    color: 'var(--muted)', marginBottom: 10 }}>
+        <span>Easy</span><span>Moderate</span><span>Max</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={save} disabled={saving}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 4, background: '#a855f7',
+                   color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer' }}>
+          {saving ? 'Saving…' : 'Save & estimate TSS'}
+        </button>
+        <button onClick={() => setOpen(false)}
+          style={{ padding: '5px 10px', borderRadius: 4, background: 'transparent',
+                   border: '1px solid var(--border)', color: 'var(--muted)',
+                   fontSize: 12, cursor: 'pointer' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function MarkPanel({ workout, onDone }) {
   const [tss, setTss] = useState(String(workout.actual_tss || workout.target_tss || ''))
   const [dur, setDur] = useState(String(workout.actual_duration_minutes || workout.target_duration_minutes || ''))
@@ -338,7 +402,7 @@ export default function Calendar() {
                         ['Time', `${Math.round(a.moving_time / 60)}min`],
                         a.distance > 0 && ['Dist', formatDistance(a.distance)],
                         a.average_watts && ['Power', `${a.average_watts?.toFixed(0)}W`],
-                        a.tss && ['TSS', a.tss?.toFixed(0)],
+                        a.tss && ['TSS', `${a.tss?.toFixed(0)}${a.tss_source === 'rpe' ? ' (RPE)' : ''}`],
                         a.average_heartrate && ['HR', `${a.average_heartrate?.toFixed(0)}bpm`],
                       ].filter(Boolean).map(([label, value]) => (
                         <div key={label}>
@@ -349,6 +413,9 @@ export default function Calendar() {
                     </div>
                     {/* Action buttons */}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      {!a.average_watts && !a.average_heartrate && (
+                        <RpePanel activity={a} onDone={refresh} />
+                      )}
                       <button
                         onClick={async () => {
                           await fetch(`/trainiq/activities/${a.id}/toggle-commute`, { method: 'POST' })

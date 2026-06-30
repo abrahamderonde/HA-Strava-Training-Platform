@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Text, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime
 import os
 
 DATABASE_URL = f"sqlite+aiosqlite:////{os.getenv('DATA_PATH', '/data/strava_training')}/training.db"
@@ -30,6 +31,8 @@ async def init_db():
             "ALTER TABLE activities ADD COLUMN commute BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN trainer BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN synthetic BOOLEAN DEFAULT 0",
+            "ALTER TABLE activities ADD COLUMN rpe FLOAT DEFAULT NULL",
+            "ALTER TABLE activities ADD COLUMN tss_source TEXT DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN icu_description TEXT",
             "ALTER TABLE planned_workouts ADD COLUMN completed BOOLEAN DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_tss FLOAT DEFAULT NULL",
@@ -73,6 +76,8 @@ class Activity(Base):
     # Raw power stream stored as JSON array for power curve calculation
     commute = Column(Boolean, default=False)
     trainer = Column(Boolean, default=False)
+    rpe = Column(Float, nullable=True)          # Borg CR10 1-10, user-entered
+    tss_source = Column(String, nullable=True)  # "power" | "hr" | "rpe" | "estimate"
     synthetic = Column(Boolean, default=False)  # True = generated, not from Strava
     power_stream = Column(JSON, nullable=True)
     hr_stream = Column(JSON, nullable=True)
@@ -196,6 +201,18 @@ class VisitedGemeente(Base):
     gemeente_name = Column(String)
     activity_id = Column(Integer, index=True)
     first_visit_date = Column(DateTime, index=True)
+
+
+class EddingtonMilestone(Base):
+    """Tracks the gap size (rides needed) at the moment a new next_e target was first
+    observed, so the progress bar has a stable denominator (e.g. '1/3 rides') rather
+    than recalculating against the full next_e value every time."""
+    __tablename__ = "eddington_milestones"
+
+    id = Column(Integer, primary_key=True)
+    next_e = Column(Integer, unique=True, index=True)  # the E value being worked toward
+    initial_gap = Column(Integer)                      # rides_needed when first observed
+    recorded_at = Column(DateTime, default=datetime.utcnow)
 
 
 # Keep old names as aliases for any legacy references

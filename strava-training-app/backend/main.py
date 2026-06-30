@@ -394,7 +394,58 @@ async def cleanup_garmin_power_streams(db: AsyncSession = Depends(get_db)):
 
 
 
-@app.post("/trainiq/garmin/import-recent")
+@app.post("/trainiq/garmin/backfill-latlng")
+async def garmin_backfill_latlng(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Backfill GPS tracks for previously-imported Garmin activities that are missing them.
+    Needed for gemeente/NL Challenge detection on rides imported before GPS support was added."""
+    async def _backfill():
+        from .services.garmin_import_service import GarminImportService
+        ftp = await get_current_ftp(db)
+        svc = GarminImportService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+            db,
+            ftp=ftp,
+        )
+        client = await svc._get_client()
+        if not client:
+            logger.error("Backfill latlng: could not authenticate")
+            return
+
+        result = await db.execute(
+            select(Activity)
+            .where(Activity.strava_id < 0)        # Garmin-imported
+            .where(Activity.trainer == False)      # outdoor only
+            .where(Activity.latlng_stream.is_(None))
+            .where(Activity.distance > 500)        # skip near-zero distance rides
+        )
+        activities = result.scalars().all()
+        logger.info("Backfilling GPS for %d Garmin activities", len(activities))
+
+        updated = 0
+        for a in activities:
+            garmin_id = abs(a.strava_id)
+            stream = await svc._fetch_latlng_stream(client, garmin_id)
+            if stream:
+                a.latlng_stream = stream
+                updated += 1
+        await db.commit()
+        logger.info("GPS backfill complete: %d/%d activities updated", updated, len(activities))
+
+        # Trigger a full gemeente rescan with the newly available GPS data
+        try:
+            await _scan_all_gemeenten()
+        except Exception as e:
+            logger.warning("Gemeente rescan after backfill failed: %s", e)
+
+    background_tasks.add_task(_backfill)
+    return {"status": "Backfill started — check logs for progress"}
+
+
+
 async def garmin_import_recent(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -1763,6 +1814,31 @@ async def unmark_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
+@app.post("/trainiq/activities/{activity_id}/set-rpe")
+async def set_activity_rpe(activity_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Set RPE (1-10) on an activity with no power/HR data and estimate TSS from it."""
+    from .services.training_science import estimate_tss_from_rpe
+
+    data = await request.json()
+    rpe = data.get("rpe")
+    if rpe is None or not (1 <= float(rpe) <= 10):
+        raise HTTPException(status_code=400, detail="rpe must be between 1 and 10")
+
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity.rpe = float(rpe)
+    new_tss = estimate_tss_from_rpe(activity.elapsed_time or 0, float(rpe))
+    activity.tss = new_tss
+    activity.tss_source = "rpe"
+    await db.commit()
+    await recalculate_pmc(db)
+
+    return {"status": "ok", "rpe": rpe, "tss": new_tss}
+
+
 @app.post("/trainiq/activities/{activity_id}/toggle-commute")
 async def toggle_activity_commute(activity_id: int, db: AsyncSession = Depends(get_db)):
     """Toggle the commute label on an activity."""
@@ -2035,6 +2111,8 @@ def _activity_to_dict(a: Activity) -> Dict:
         "commute": a.commute,
         "trainer": a.trainer,
         "synthetic": a.synthetic,
+        "rpe": a.rpe,
+        "tss_source": a.tss_source,
         "tss": a.tss,
         "np": a.np,
         "if_": a.if_,
@@ -2129,7 +2207,7 @@ async def get_eddington(db: AsyncSession = Depends(get_db)):
     rows = result.all()
 
     if not rows:
-        return {"e": 0, "next_e": 1, "rides_needed": 1, "total_rides": 0, "histogram": []}
+        return {"e": 0, "next_e": 1, "rides_needed": 1, "gap_progress": 0, "initial_gap": 1, "total_rides": 0, "histogram": []}
 
     from collections import defaultdict
     # Sum distance per calendar day (multiple rides same day = combined)
@@ -2150,7 +2228,21 @@ async def get_eddington(db: AsyncSession = Depends(get_db)):
             break
 
     next_e = e + 1
-    rides_needed = next_e - sum(1 for d in distances if d >= next_e)
+    count_at_next_e = sum(1 for d in distances if d >= next_e)
+    rides_needed = next_e - count_at_next_e
+
+    # Get or create the stable milestone denominator for this next_e target
+    from .models.database import EddingtonMilestone
+    ms_result = await db.execute(
+        select(EddingtonMilestone).where(EddingtonMilestone.next_e == next_e)
+    )
+    milestone = ms_result.scalar_one_or_none()
+    if not milestone and rides_needed > 0:
+        milestone = EddingtonMilestone(next_e=next_e, initial_gap=rides_needed)
+        db.add(milestone)
+        await db.commit()
+    initial_gap = milestone.initial_gap if milestone else max(1, rides_needed)
+    gap_progress = max(0, initial_gap - rides_needed)
 
     # Progress histogram: for each distance bucket, how many days
     histogram = []
@@ -2162,6 +2254,8 @@ async def get_eddington(db: AsyncSession = Depends(get_db)):
         "e": e,
         "next_e": next_e,
         "rides_needed": max(0, rides_needed),
+        "gap_progress": gap_progress,
+        "initial_gap": initial_gap,
         "total_riding_days": len(distances),
         "total_rides": len(rows),
         "max_day_km": round(max(distances), 1),

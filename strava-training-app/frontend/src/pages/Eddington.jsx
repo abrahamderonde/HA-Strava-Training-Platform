@@ -39,15 +39,15 @@ export default function Eddington() {
   if (loading) return <div className="loading">Calculating Eddington number…</div>
   if (!data) return <div className="empty-state">No cycling data available</div>
 
-  const { e, next_e, rides_needed, total_riding_days, histogram, top_days } = data
+  const { e, next_e, rides_needed, gap_progress, initial_gap,
+          total_riding_days, histogram, top_days } = data
 
-  // Progress from current E toward next E
-  // rides_needed = how many more ≥next_e rides still needed
-  // ridesHave = how many we've collected so far toward next_e
-  // Show as X/next_e where we started from (next_e - original_needed)
-  const ridesHave = next_e - rides_needed
-  // Progress bar: from 0 (just reached E) to next_e (reached next_e)
-  const progressPct = Math.round((ridesHave / next_e) * 100)
+  // Stable countdown: gap_progress / initial_gap (e.g. "2 / 3 rides")
+  // initial_gap is recorded once when this next_e target was first observed,
+  // so it stays fixed while gap_progress increases as qualifying rides come in.
+  const progressPct = initial_gap > 0
+    ? Math.round((gap_progress / initial_gap) * 100)
+    : 100
 
   // Add n=n reference data to histogram
   const histWithRef = histogram.map(d => ({
@@ -88,7 +88,7 @@ export default function Eddington() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 14, color: 'var(--muted)' }}>Progress toward E{next_e}</span>
               <span style={{ fontSize: 14, fontFamily: 'var(--font-mono)' }}>
-                {ridesHave} / {next_e} rides ≥{next_e} km
+                {gap_progress} / {initial_gap} rides ≥{next_e} km
               </span>
             </div>
             <div style={{ height: 10, background: 'var(--surface2)', borderRadius: 5, overflow: 'hidden' }}>
@@ -208,6 +208,7 @@ export default function Eddington() {
           </div>
         </div>
       )}
+    </div>
     </div>
   )
 }

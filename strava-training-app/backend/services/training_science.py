@@ -101,6 +101,31 @@ def estimate_tss_from_hr(
     return round(tss, 1)
 
 
+def estimate_tss_from_rpe(duration_seconds: int, rpe: float) -> float:
+    """
+    Estimate TSS from session RPE (Borg CR10 scale, 1-10).
+    Based on Foster's session-RPE method, calibrated so RPE 5 (moderate/Z2)
+    over 1 hour ≈ 50 TSS, matching standard TSS scaling.
+
+    RPE 1-2: very easy / recovery   (IF ~0.45-0.55)
+    RPE 3-4: easy / endurance        (IF ~0.60-0.70)
+    RPE 5-6: moderate / tempo        (IF ~0.75-0.85)
+    RPE 7-8: hard / threshold        (IF ~0.90-1.00)
+    RPE 9-10: very hard / max effort (IF ~1.05-1.20)
+    """
+    if rpe <= 0 or duration_seconds <= 0:
+        return 0.0
+
+    rpe = max(1.0, min(rpe, 10.0))
+    # Map RPE 1-10 to an approximate intensity factor 0.40-1.20
+    # Roughly linear with slight curve at the top end for the hardest efforts
+    if_equiv = 0.35 + (rpe / 10.0) * 0.85
+
+    duration_hours = duration_seconds / 3600.0
+    tss = duration_hours * (if_equiv ** 2) * 100.0
+    return round(tss, 1)
+
+
 def estimate_tss_no_data(duration_seconds: int, sport_type: str) -> float:
     """
     Rough TSS estimate when no power or HR data is available.

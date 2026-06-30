@@ -71,6 +71,14 @@ function GarminImportCard() {
         >
           Import 5 years
         </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('backfill-latlng', 'GPS backfill')}
+          disabled={!authenticated || importing}
+          title="Fetch GPS tracks for already-imported rides — needed for NL Challenge / gemeente detection"
+        >
+          🗺️ Backfill GPS
+        </button>
       </div>
 
       {msg && (

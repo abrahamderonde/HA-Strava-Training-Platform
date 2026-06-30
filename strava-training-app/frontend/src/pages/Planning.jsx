@@ -88,6 +88,7 @@ export default function Planning() {
         workout_minutes: last?.workout_minutes ?? 0,
         indoor: last?.indoor ?? false,
         commute_minutes: last?.commute_minutes ?? 0,
+        day_type: null,
       }
     })
     setDaySettings(days)
@@ -146,19 +147,43 @@ export default function Planning() {
       return
     }
     setGenerating(true)
-    setStatus('Generating workouts...')
+
+    // Separate FTP test days from regular AI-generated days
+    const ftpTestDays = daySettings
+      .map((d, i) => ({ ...d, index: i }))
+      .filter(d => d.day_type === 'ftp_test')
+    const aiDays = daySettings.filter(d => d.day_type !== 'ftp_test')
+
     try {
-      const res = await fetch('/trainiq/planning/generate-week', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          goal_id: activeGoal.id,
-          week_start: format(weekStart, 'yyyy-MM-dd'),
-          day_settings: daySettings,
+      // Schedule FTP test(s) directly — no AI needed, exact protocol
+      for (const d of ftpTestDays) {
+        const date = format(addDays(weekStart, d.index), 'yyyy-MM-dd')
+        setStatus(`Scheduling FTP test for ${date}…`)
+        await fetch('/trainiq/planning/schedule-ftp-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: date + 'T10:00:00', indoor: d.indoor }),
         })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      setStatus('Workouts generated!')
+      }
+
+      // Generate AI workouts for remaining training days
+      const remainingTrainingDays = aiDays.filter(d => d.workout_minutes > 0)
+      if (remainingTrainingDays.length > 0) {
+        setStatus('Generating workouts…')
+        const res = await fetch('/trainiq/planning/generate-week', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            goal_id: activeGoal.id,
+            week_start: format(weekStart, 'yyyy-MM-dd'),
+            day_settings: aiDays,
+          })
+        })
+        if (!res.ok) throw new Error(await res.text())
+      }
+
+      setStatus(ftpTestDays.length > 0 ? 'FTP test scheduled + workouts generated!' : 'Workouts generated!')
+      setFtpTestDue(p => p ? { ...p, due: ftpTestDays.length > 0 ? false : p.due } : p)
       await loadWorkouts()
     } catch (e) {
       setStatus(`Error: ${e.message}`)
@@ -235,37 +260,15 @@ export default function Planning() {
           background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)',
           borderLeft: '4px solid #ef4444', borderRadius: 8,
           padding: '12px 16px', marginBottom: 16,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-          flexWrap: 'wrap',
         }}>
-          <div>
-            <div style={{ fontWeight: 700, color: '#ef4444', marginBottom: 3 }}>
-              🔴 FTP Test Due
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              {ftpTestDue.days_since == null
-                ? 'No FTP test found in history.'
-                : `Last test was ${ftpTestDue.days_since} days ago (recommended every 60 days).`}
-            </div>
+          <div style={{ fontWeight: 700, color: '#ef4444', marginBottom: 3 }}>
+            🔴 FTP Test Due
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button
-              className="btn btn-sm"
-              disabled={schedulingFtpTest}
-              onClick={() => scheduleFtpTest(format(new Date(), 'yyyy-MM-dd'), true)}
-              style={{ background: '#ef4444', color: '#fff', border: 'none',
-                       borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12 }}>
-              {schedulingFtpTest ? 'Scheduling…' : '📅 Schedule for today (indoor)'}
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => {
-                const d = format(addDays(new Date(), 1), 'yyyy-MM-dd')
-                scheduleFtpTest(d, false)
-              }}
-              style={{ fontSize: 12 }}>
-              Tomorrow (outdoor)
-            </button>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {ftpTestDue.days_since == null
+              ? 'No FTP test found in history.'
+              : `Last test was ${ftpTestDue.days_since} days ago (recommended every 60 days).`}
+            {' '}Set a day below to <strong style={{ color: 'var(--text)' }}>FTP</strong> to schedule one.
           </div>
         </div>
       )}
@@ -419,13 +422,29 @@ export default function Planning() {
                             <td style={{ padding: '8px 8px', textAlign: 'center' }}>
                               {d.workout_minutes > 0 ? (
                                 <button
-                                  onClick={() => updateDay(i, 'indoor', !d.indoor)}
+                                  onClick={() => {
+                                    // Cycle: indoor -> outdoor -> ftp_test -> indoor
+                                    const next = d.day_type === 'ftp_test' ? 'indoor'
+                                               : d.indoor ? 'outdoor' : 'ftp_test'
+                                    if (next === 'ftp_test') {
+                                      updateDay(i, 'day_type', 'ftp_test')
+                                      updateDay(i, 'indoor', true)
+                                    } else if (next === 'outdoor') {
+                                      updateDay(i, 'day_type', null)
+                                      updateDay(i, 'indoor', false)
+                                    } else {
+                                      updateDay(i, 'day_type', null)
+                                      updateDay(i, 'indoor', true)
+                                    }
+                                  }}
                                   style={{
                                     padding: '3px 10px', borderRadius: 12, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                                    background: d.indoor ? 'rgba(59,130,246,0.2)' : 'rgba(34,197,94,0.15)',
-                                    color: d.indoor ? '#3b82f6' : '#22c55e',
+                                    background: d.day_type === 'ftp_test' ? 'rgba(239,68,68,0.18)'
+                                              : d.indoor ? 'rgba(59,130,246,0.2)' : 'rgba(34,197,94,0.15)',
+                                    color: d.day_type === 'ftp_test' ? '#ef4444'
+                                         : d.indoor ? '#3b82f6' : '#22c55e',
                                   }}>
-                                  {d.indoor ? 'Indoor' : 'Outdoor'}
+                                  {d.day_type === 'ftp_test' ? '🔴 FTP Test' : d.indoor ? 'Indoor' : 'Outdoor'}
                                 </button>
                               ) : <span style={{ color: 'var(--border)' }}>—</span>}
                             </td>

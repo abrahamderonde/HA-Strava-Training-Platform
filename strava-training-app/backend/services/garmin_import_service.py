@@ -67,6 +67,45 @@ class GarminImportService:
         self.ftp = ftp
         self._client = None
 
+    async def _fetch_latlng_stream(self, client, garmin_id: int) -> Optional[List]:
+        """Fetch GPS track as [[lat, lon], ...] by downloading GPX and parsing it.
+        Returns None for indoor/trainer activities with no GPS data."""
+        try:
+            from garminconnect import Garmin
+            import xml.etree.ElementTree as ET
+
+            gpx_bytes = client.download_activity(
+                str(garmin_id),
+                dl_fmt=Garmin.ActivityDownloadFormat.GPX,
+            )
+            if not gpx_bytes:
+                return None
+
+            root = ET.fromstring(gpx_bytes)
+            # GPX namespace handling — find all trackpoints regardless of namespace
+            ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+            trkpts = root.findall('.//gpx:trkpt', ns)
+            if not trkpts:
+                # Try without namespace as fallback
+                trkpts = root.findall('.//trkpt')
+            if not trkpts:
+                return None
+
+            latlng = []
+            # Sample every Nth point to keep stream size reasonable (max ~2000 points)
+            step = max(1, len(trkpts) // 2000)
+            for pt in trkpts[::step]:
+                lat = pt.get('lat')
+                lon = pt.get('lon')
+                if lat and lon:
+                    latlng.append([float(lat), float(lon)])
+
+            return latlng if len(latlng) > 5 else None
+
+        except Exception as e:
+            logger.debug("Could not fetch GPX for activity %s: %s", garmin_id, e)
+            return None
+
     async def _get_client(self):
         """Get authenticated Garmin client, using cached tokens."""
         if self._client:
@@ -213,6 +252,13 @@ class GarminImportService:
             np_approx = None
             avg_p = None
 
+        # Fetch GPS track for outdoor activities (skip trainer/indoor)
+        latlng_stream = None
+        if fetch_streams and not parsed.get("trainer"):
+            client = await self._get_client()
+            if client:
+                latlng_stream = await self._fetch_latlng_stream(client, parsed["garmin_id"])
+
         activity = Activity(
             strava_id=db_id,
             name=parsed["name"],
@@ -230,15 +276,17 @@ class GarminImportService:
             has_power=bool(parsed.get("average_watts")),
             trainer=parsed["trainer"],
             commute=parsed["commute"],
-            power_stream=None,  # skip stream to avoid wrong values
+            power_stream=None,  # skip power stream to avoid wrong values
+            latlng_stream=latlng_stream,
             synthetic=False,
         )
 
         self.db.add(activity)
         await self.db.commit()
         await self.db.refresh(activity)
-        logger.info("Imported Garmin activity: %s (%s) TSS=%.0f",
-                    parsed["name"], parsed["sport_type"], tss or 0)
+        logger.info("Imported Garmin activity: %s (%s) TSS=%.0f GPS=%s",
+                    parsed["name"], parsed["sport_type"], tss or 0,
+                    f"{len(latlng_stream)}pts" if latlng_stream else "none")
         return activity
 
     async def import_history(self, days: int = 365, progress_callback=None) -> Dict:
