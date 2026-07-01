@@ -114,7 +114,7 @@ class StravaService:
 
         avg_hr = activity_data.get("average_heartrate")
         if avg_hr and avg_hr > 0:
-            tss = estimate_tss_from_hr(avg_hr, moving_time)
+            tss = estimate_tss_from_hr(moving_time, avg_hr)
             return tss, None, None, False
 
         tss = estimate_tss_no_data(moving_time, sport_type)

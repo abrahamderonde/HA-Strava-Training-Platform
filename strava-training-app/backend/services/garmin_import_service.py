@@ -186,26 +186,45 @@ class GarminImportService:
             return None
 
     async def _fetch_power_stream(self, client, garmin_id: int) -> Optional[List[float]]:
-        """Fetch per-second power data from activity details."""
+        """Fetch per-second power data by downloading the TCX file and parsing <Watts> tags.
+        TCX is far more reliable than the JSON activity-details metrics API, which has
+        been observed returning garbled/mis-scaled values."""
         try:
-            details = client.get_activity_details(str(garmin_id), maxchart=3600)
-            metrics = details.get("gritOffset") or details.get("metricDescriptors") or []
-            # Find power metric key
-            power_key = None
-            for m in (details.get("metricDescriptors") or []):
-                if "power" in (m.get("key") or "").lower():
-                    power_key = m.get("metricsIndex")
-                    break
-            if power_key is None:
+            from garminconnect import Garmin
+            import xml.etree.ElementTree as ET
+
+            tcx_bytes = client.download_activity(
+                str(garmin_id),
+                dl_fmt=Garmin.ActivityDownloadFormat.TCX,
+            )
+            if not tcx_bytes:
                 return None
-            stream = []
-            for point in (details.get("activityDetailMetrics") or []):
-                vals = point.get("metrics") or []
-                if power_key < len(vals):
-                    stream.append(vals[power_key])
-            return stream if len(stream) > 10 else None
+
+            root = ET.fromstring(tcx_bytes)
+            ns = {
+                'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2',
+                'ext': 'http://www.garmin.com/xmlschemas/ActivityExtension/v2',
+            }
+            trackpoints = root.findall('.//tcx:Trackpoint', ns)
+            if not trackpoints:
+                return None
+
+            watts = []
+            for tp in trackpoints:
+                # Power is nested under Extensions/TPX/Watts
+                watts_el = tp.find('.//ext:Watts', ns)
+                if watts_el is not None and watts_el.text:
+                    try:
+                        w = float(watts_el.text)
+                        if 0 <= w <= 3000:  # sanity range for cycling power
+                            watts.append(w)
+                    except ValueError:
+                        continue
+
+            return watts if len(watts) > 30 else None
+
         except Exception as e:
-            logger.debug("Could not fetch power stream for %s: %s", garmin_id, e)
+            logger.debug("Could not fetch TCX power stream for %s: %s", garmin_id, e)
             return None
 
     async def import_activity(self, raw: Dict, fetch_streams: bool = True) -> Optional[Activity]:
@@ -223,7 +242,18 @@ class GarminImportService:
         if existing.scalar_one_or_none():
             return None  # Already imported
 
-        # Calculate TSS from average power (reliable) or HR fallback
+        # Fetch power stream (TCX-based, reliable) and compute real Normalized Power
+        power_stream = None
+        np_real = None
+        should_fetch_power = fetch_streams and bool(parsed.get("average_watts"))
+        if should_fetch_power:
+            client = await self._get_client()
+            if client:
+                power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
+                if power_stream:
+                    np_real = calculate_normalized_power(power_stream)
+
+        # Calculate TSS using real NP when available, falling back to avg power, then HR
         tss = None
         try:
             avg_p = float(parsed.get("average_watts") or 0) or None
@@ -232,25 +262,58 @@ class GarminImportService:
             max_hr = float(parsed.get("max_heartrate") or 185)
             ftp = float(self.ftp) if self.ftp else 200.0
 
-            if avg_p and avg_p > 0 and ftp > 0 and elapsed > 0:
-                if_est = avg_p / ftp
-                tss = (elapsed * avg_p * if_est) / (ftp * 3600) * 100
+            if not self.ftp or self.ftp == 200.0:
+                logger.warning(
+                    "Using fallback FTP=200W for '%s' — if your real FTP differs, "
+                    "TSS will be wrong until recalculated. self.ftp=%s",
+                    parsed.get("name"), self.ftp
+                )
+
+            # Prefer true NP from power stream — this matches intervals.icu's calculation
+            np_for_tss = np_real if np_real and np_real > 0 else avg_p
+            source = None
+
+            if np_for_tss and np_for_tss > 0 and ftp > 0 and elapsed > 0:
+                if_est = np_for_tss / ftp
+                tss = (elapsed * np_for_tss * if_est) / (ftp * 3600) * 100
+                source = "power" if np_real else "power_avg"
+
+                # Flag suspicious NP/avg_power ratios for debugging
+                if avg_p and np_for_tss > avg_p * 1.5:
+                    logger.warning(
+                        "Suspicious NP for '%s': NP=%.0fW vs avg=%.0fW (ratio %.2f) — "
+                        "elapsed=%ds, power_stream_len=%s, IF=%.2f, TSS=%.0f",
+                        parsed.get("name"), np_for_tss, avg_p, np_for_tss/avg_p,
+                        elapsed, len(power_stream) if power_stream else 0, if_est, tss
+                    )
+                if if_est > 1.15:
+                    logger.warning(
+                        "High IF for '%s': IF=%.2f (NP=%.0fW, FTP=%.0fW) — "
+                        "check if FTP is set correctly or if this was a genuinely hard/short effort",
+                        parsed.get("name"), if_est, np_for_tss, ftp
+                    )
             elif avg_hr and elapsed > 0:
                 tss = estimate_tss_from_hr(
-                    elapsed, avg_hr, max_hr or 185, parsed["sport_type"]
+                    duration_seconds=elapsed,
+                    avg_hr=avg_hr,
+                    max_hr=max_hr or 185,
+                    sport_type=parsed["sport_type"],
                 )
+                source = "hr"
 
             # Sanity cap
             if tss and tss > 500:
                 logger.warning("TSS %.0f too high for %s, capping at 500", tss, parsed["name"])
                 tss = 500.0
 
-            np_approx = round(avg_p * 1.05) if avg_p else None
+            # NP for storage: real NP if we have it, else the avg-power approximation
+            np_approx = round(np_real) if np_real else (round(avg_p * 1.05) if avg_p else None)
         except Exception as e:
             logger.warning("TSS calculation failed for %s: %s", parsed.get("name"), e)
             tss = None
             np_approx = None
             avg_p = None
+            source = None
 
         # Fetch GPS track for outdoor activities (skip trainer/indoor)
         latlng_stream = None
@@ -270,13 +333,14 @@ class GarminImportService:
             average_watts=avg_p,
             weighted_avg_watts=np_approx,
             np=np_approx,
+            tss_source=source,
             average_heartrate=parsed.get("average_heartrate"),
             max_heartrate=parsed.get("max_heartrate"),
             tss=tss,
             has_power=bool(parsed.get("average_watts")),
             trainer=parsed["trainer"],
             commute=parsed["commute"],
-            power_stream=None,  # skip power stream to avoid wrong values
+            power_stream=power_stream,
             latlng_stream=latlng_stream,
             synthetic=False,
         )
@@ -284,8 +348,10 @@ class GarminImportService:
         self.db.add(activity)
         await self.db.commit()
         await self.db.refresh(activity)
-        logger.info("Imported Garmin activity: %s (%s) TSS=%.0f GPS=%s",
+        logger.info("Imported Garmin activity: %s (%s) TSS=%.0f NP=%s avg=%s GPS=%s",
                     parsed["name"], parsed["sport_type"], tss or 0,
+                    f"{np_approx}W" if np_approx else "n/a",
+                    f"{avg_p:.0f}W" if avg_p else "n/a",
                     f"{len(latlng_stream)}pts" if latlng_stream else "none")
         return activity
 

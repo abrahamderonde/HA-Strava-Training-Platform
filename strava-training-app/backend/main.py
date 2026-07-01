@@ -445,7 +445,74 @@ async def garmin_backfill_latlng(
     return {"status": "Backfill started — check logs for progress"}
 
 
+@app.post("/trainiq/garmin/recalculate-tss")
+async def garmin_recalculate_tss(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Recalculate TSS for existing Garmin-imported activities using real Normalized
+    Power (fetched via TCX) instead of the previous average-power approximation."""
+    async def _recalc():
+        from .services.garmin_import_service import GarminImportService
+        from .services.training_science import calculate_normalized_power, estimate_tss_from_hr
 
+        ftp = await get_current_ftp(db)
+        svc = GarminImportService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+            db,
+            ftp=ftp,
+        )
+        client = await svc._get_client()
+        if not client:
+            logger.error("Recalculate TSS: could not authenticate")
+            return
+
+        result = await db.execute(
+            select(Activity).where(Activity.strava_id < 0)
+        )
+        activities = result.scalars().all()
+        logger.info("Recalculating TSS for %d Garmin activities", len(activities))
+
+        updated = 0
+        for a in activities:
+            garmin_id = abs(a.strava_id)
+            old_tss = a.tss
+            power_stream = await svc._fetch_power_stream(client, garmin_id)
+            np_real = calculate_normalized_power(power_stream) if power_stream else None
+
+            np_for_tss = np_real if np_real and np_real > 0 else a.average_watts
+            if np_for_tss and np_for_tss > 0 and ftp > 0 and a.elapsed_time:
+                if_est = np_for_tss / ftp
+                new_tss = (a.elapsed_time * np_for_tss * if_est) / (ftp * 3600) * 100
+                a.tss = round(min(new_tss, 500), 1)
+                a.tss_source = "power" if np_real else "power_avg"
+                if np_real:
+                    a.np = round(np_real)
+                    a.weighted_avg_watts = round(np_real)
+                    a.power_stream = power_stream
+                updated += 1
+                logger.info("Recalculated '%s': TSS %.0f -> %.0f (NP=%s)",
+                            a.name, old_tss or 0, a.tss, f"{np_real:.0f}W" if np_real else "n/a")
+            elif a.average_heartrate and a.elapsed_time:
+                new_tss = estimate_tss_from_hr(a.elapsed_time, a.average_heartrate,
+                                                a.max_heartrate or 185, a.sport_type)
+                a.tss = round(min(new_tss, 500), 1)
+                a.tss_source = "hr"
+                updated += 1
+                logger.info("Recalculated '%s' from HR: TSS %.0f -> %.0f",
+                            a.name, old_tss or 0, a.tss)
+
+        await db.commit()
+        logger.info("TSS recalculation complete: %d/%d activities updated", updated, len(activities))
+        await recalculate_pmc(db)
+        await recalculate_power_curve_and_ftp(db)
+
+    background_tasks.add_task(_recalc)
+    return {"status": "TSS recalculation started — check logs for progress"}
+
+
+@app.post("/trainiq/garmin/import-recent")
 async def garmin_import_recent(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),

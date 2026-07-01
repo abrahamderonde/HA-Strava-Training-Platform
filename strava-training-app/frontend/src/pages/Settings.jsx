@@ -79,6 +79,14 @@ function GarminImportCard() {
         >
           🗺️ Backfill GPS
         </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('recalculate-tss', 'TSS recalculation')}
+          disabled={!authenticated || importing}
+          title="Recalculate TSS using real Normalized Power instead of average power — fixes values that don't match intervals.icu"
+        >
+          🔄 Recalculate TSS
+        </button>
       </div>
 
       {msg && (

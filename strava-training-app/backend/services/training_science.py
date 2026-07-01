@@ -75,9 +75,10 @@ def calculate_tss_from_power(
 
 
 def estimate_tss_from_hr(
-    avg_hr: float,
     duration_seconds: int,
+    avg_hr: float,
     max_hr: float = MAX_HR_DEFAULT,
+    sport_type: str = "Ride",
     rest_hr: float = REST_HR_DEFAULT,
     ftp_hr_fraction: float = 0.89  # approx HR at threshold
 ) -> float:
