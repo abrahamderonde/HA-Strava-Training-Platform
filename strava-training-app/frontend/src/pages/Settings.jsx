@@ -297,7 +297,8 @@ export default function Settings() {
 
           <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
             <strong>CP</strong> is automatically estimated from your power data using the 3-parameter critical power model (Morton, 1996). It updates nightly as you ride.<br/>
-            <strong>FTP</strong> is your manual input and is used for all TSS calculations, power zones, and workout targets. You stay in control of when it changes — use "Copy CP → FTP" when you agree with the model's estimate.
+            <strong>FTP</strong> is your manual input and is used for all TSS calculations, power zones, and workout targets. You stay in control of when it changes — use "Copy CP → FTP" when you agree with the model's estimate.<br/>
+            Setting FTP here (or accepting CP) records it as effective from <strong>today</strong>. Historical TSS is calculated using whichever FTP was in effect on each activity's date — <strong>add or backdate FTP entries in the Calendar page</strong> if you know your FTP changed on a specific past date.
           </div>
         </div>
 

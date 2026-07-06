@@ -158,6 +158,88 @@ function MarkPanel({ workout, onDone }) {
   )
 }
 
+// ── FTP / Weight entry panel ────────────────────────────────────────────
+function FtpWeightPanel({ date, onDone }) {
+  const [mode, setMode] = useState('ftp') // 'ftp' | 'weight'
+  const [ftp, setFtp] = useState('')
+  const [weight, setWeight] = useState('')
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    const dateStr = format(date, 'yyyy-MM-dd')
+    setSaving(true)
+    if (mode === 'ftp') {
+      if (!ftp) { setSaving(false); return }
+      await fetch('/trainiq/ftp-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateStr, ftp: parseFloat(ftp), notes: notes || null }),
+      })
+    } else {
+      if (!weight) { setSaving(false); return }
+      await fetch('/trainiq/weight-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: dateStr, weight_kg: parseFloat(weight) }),
+      })
+    }
+    setSaving(false)
+    onDone()
+  }
+
+  return (
+    <div style={{ marginTop: 12, padding: '12px', background: 'var(--bg)', borderRadius: 6,
+                  border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <button onClick={() => setMode('ftp')}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer', fontSize: 12,
+            background: mode === 'ftp' ? 'rgba(249,115,22,0.15)' : 'var(--surface2)',
+            border: `1px solid ${mode === 'ftp' ? 'var(--accent)' : 'var(--border)'}`,
+            color: mode === 'ftp' ? 'var(--accent)' : 'var(--muted)' }}>
+          ⚡ FTP
+        </button>
+        <button onClick={() => setMode('weight')}
+          style={{ flex: 1, padding: '5px 0', borderRadius: 4, cursor: 'pointer', fontSize: 12,
+            background: mode === 'weight' ? 'rgba(59,130,246,0.15)' : 'var(--surface2)',
+            border: `1px solid ${mode === 'weight' ? '#3b82f6' : 'var(--border)'}`,
+            color: mode === 'weight' ? '#3b82f6' : 'var(--muted)' }}>
+          ⚖️ Weight
+        </button>
+      </div>
+
+      {mode === 'ftp' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input type="number" value={ftp} onChange={e => setFtp(e.target.value)}
+            placeholder="FTP (W)" style={{ padding: '5px 8px', borderRadius: 4,
+            border: '1px solid var(--border)', background: 'var(--surface2)',
+            color: 'var(--text)', fontSize: 12 }} />
+          <input value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="Notes (optional, e.g. 'FTP test')" style={{ padding: '5px 8px', borderRadius: 4,
+            border: '1px solid var(--border)', background: 'var(--surface2)',
+            color: 'var(--text)', fontSize: 12 }} />
+        </div>
+      ) : (
+        <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)}
+          placeholder="Weight (kg)" style={{ width: '100%', padding: '5px 8px', borderRadius: 4,
+          border: '1px solid var(--border)', background: 'var(--surface2)',
+          color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' }} />
+      )}
+
+      <button onClick={save} disabled={saving || (mode === 'ftp' ? !ftp : !weight)}
+        style={{ marginTop: 8, width: '100%', padding: '5px 0', borderRadius: 4,
+                 background: mode === 'ftp' ? 'var(--accent)' : '#3b82f6',
+                 color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer',
+                 opacity: (mode === 'ftp' ? !ftp : !weight) ? 0.4 : 1 }}>
+        {saving ? 'Saving…' : `Save ${mode === 'ftp' ? 'FTP' : 'weight'} entry`}
+      </button>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+        Effective from this date forward, until the next entry.
+      </div>
+    </div>
+  )
+}
+
 // ── Add manual activity panel ──────────────────────────────────────────
 function AddActivityPanel({ date, onDone }) {
   const [title, setTitle] = useState('')
@@ -237,6 +319,8 @@ function AddActivityPanel({ date, onDone }) {
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [calData, setCalData] = useState({ activities: [], planned: [] })
+  const [ftpHistory, setFtpHistory] = useState([])
+  const [weightHistory, setWeightHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showAddPanel, setShowAddPanel] = useState(false)
@@ -245,10 +329,16 @@ export default function Calendar() {
     setLoading(true)
     const y = currentDate.getFullYear()
     const m = currentDate.getMonth() + 1
-    fetch(`/trainiq/activities/calendar?year=${y}&month=${m}`)
-      .then(r => r.json())
-      .then(d => { setCalData(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    Promise.all([
+      fetch(`/trainiq/activities/calendar?year=${y}&month=${m}`).then(r => r.json()).catch(() => ({ activities: [], planned: [] })),
+      fetch('/trainiq/ftp-history').then(r => r.json()).catch(() => []),
+      fetch('/trainiq/weight-history').then(r => r.json()).catch(() => []),
+    ]).then(([cal, ftpH, weightH]) => {
+      setCalData(cal)
+      setFtpHistory(Array.isArray(ftpH) ? ftpH : [])
+      setWeightHistory(Array.isArray(weightH) ? weightH : [])
+      setLoading(false)
+    })
   }
 
   useEffect(() => { load() }, [currentDate])
@@ -272,6 +362,11 @@ export default function Calendar() {
     if (!plannedByDay[key]) plannedByDay[key] = []
     plannedByDay[key].push(p)
   })
+
+  const ftpByDay = {}
+  ftpHistory.forEach(f => { ftpByDay[f.date] = f })
+  const weightByDay = {}
+  weightHistory.forEach(w => { weightByDay[w.date] = w })
 
   const prev = () => setCurrentDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))
   const next = () => setCurrentDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1))
@@ -326,9 +421,19 @@ export default function Calendar() {
                       opacity: inMonth ? 1 : 0.35,
                       transition: 'background 0.1s',
                     }}>
-                    <div style={{ fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
-                      color: isToday(day) ? 'var(--accent)' : 'var(--muted)', marginBottom: 4 }}>
-                      {format(day, 'd')}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
+                        color: isToday(day) ? 'var(--accent)' : 'var(--muted)' }}>
+                        {format(day, 'd')}
+                      </span>
+                      <span style={{ display: 'flex', gap: 2 }}>
+                        {ftpByDay[key] && (
+                          <span title={`FTP: ${ftpByDay[key].ftp}W`} style={{ fontSize: 9, color: 'var(--accent)' }}>⚡</span>
+                        )}
+                        {weightByDay[key] && (
+                          <span title={`Weight: ${weightByDay[key].weight_kg}kg`} style={{ fontSize: 9, color: '#3b82f6' }}>⚖️</span>
+                        )}
+                      </span>
                     </div>
                     {acts.map(a => (
                       <div key={a.id} className={`calendar-activity-pill ${SPORT_PILL(a.sport_type)}`}
@@ -370,16 +475,60 @@ export default function Calendar() {
               <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <div className="card-title" style={{ margin: 0 }}>{format(selected, 'EEEE d MMM')}</div>
-                  <button onClick={() => setShowAddPanel(v => !v)}
-                    style={{ background: 'var(--surface2)', border: '1px solid var(--border)',
-                             borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: 'var(--muted)',
-                             display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                    <Plus size={12} /> Add
-                  </button>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => { setShowAddPanel(v => v === 'activity' ? false : 'activity') }}
+                      title="Add activity"
+                      style={{ background: showAddPanel === 'activity' ? 'rgba(249,115,22,0.15)' : 'var(--surface2)',
+                               border: '1px solid var(--border)',
+                               borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: 'var(--muted)',
+                               display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                      <Plus size={12} /> Activity
+                    </button>
+                    <button onClick={() => { setShowAddPanel(v => v === 'ftp' ? false : 'ftp') }}
+                      title="Add FTP or weight entry"
+                      style={{ background: showAddPanel === 'ftp' ? 'rgba(249,115,22,0.15)' : 'var(--surface2)',
+                               border: '1px solid var(--border)',
+                               borderRadius: 6, padding: '4px 8px', cursor: 'pointer', color: 'var(--muted)',
+                               display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                      <Plus size={12} /> FTP/Wt
+                    </button>
+                  </div>
                 </div>
 
-                {showAddPanel && (
+                {showAddPanel === 'activity' && (
                   <AddActivityPanel date={selected} onDone={refresh} />
+                )}
+                {showAddPanel === 'ftp' && (
+                  <FtpWeightPanel date={selected} onDone={refresh} />
+                )}
+
+                {(ftpByDay[selectedKey] || weightByDay[selectedKey]) && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {ftpByDay[selectedKey] && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.3)',
+                        borderRadius: 6, padding: '4px 10px', fontSize: 12, color: 'var(--accent)' }}>
+                        ⚡ FTP {ftpByDay[selectedKey].ftp}W
+                        <button onClick={async () => {
+                          await fetch(`/trainiq/ftp-history/${ftpByDay[selectedKey].id}`, { method: 'DELETE' })
+                          refresh()
+                        }} style={{ background: 'none', border: 'none', color: 'var(--accent)',
+                          cursor: 'pointer', fontSize: 12, padding: 0 }}>✕</button>
+                      </div>
+                    )}
+                    {weightByDay[selectedKey] && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)',
+                        borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#3b82f6' }}>
+                        ⚖️ {weightByDay[selectedKey].weight_kg}kg
+                        <button onClick={async () => {
+                          await fetch(`/trainiq/weight-history/${weightByDay[selectedKey].id}`, { method: 'DELETE' })
+                          refresh()
+                        }} style={{ background: 'none', border: 'none', color: '#3b82f6',
+                          cursor: 'pointer', fontSize: 12, padding: 0 }}>✕</button>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {selectedActivities.length === 0 && selectedPlanned.length === 0 && !showAddPanel && (

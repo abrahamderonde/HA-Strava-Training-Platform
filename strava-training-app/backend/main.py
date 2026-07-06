@@ -395,118 +395,135 @@ async def cleanup_garmin_power_streams(db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/trainiq/garmin/backfill-latlng")
-async def garmin_backfill_latlng(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
+async def garmin_backfill_latlng(background_tasks: BackgroundTasks):
     """Backfill GPS tracks for previously-imported Garmin activities that are missing them.
     Needed for gemeente/NL Challenge detection on rides imported before GPS support was added."""
     async def _backfill():
+        from .models.database import AsyncSessionLocal
         from .services.garmin_import_service import GarminImportService
-        ftp = await get_current_ftp(db)
-        svc = GarminImportService(
-            CONFIG.get("garmin_email", ""),
-            CONFIG.get("garmin_password", ""),
-            db,
-            ftp=ftp,
-        )
-        client = await svc._get_client()
-        if not client:
-            logger.error("Backfill latlng: could not authenticate")
-            return
 
-        result = await db.execute(
-            select(Activity)
-            .where(Activity.strava_id < 0)        # Garmin-imported
-            .where(Activity.trainer == False)      # outdoor only
-            .where(Activity.latlng_stream.is_(None))
-            .where(Activity.distance > 500)        # skip near-zero distance rides
-        )
-        activities = result.scalars().all()
-        logger.info("Backfilling GPS for %d Garmin activities", len(activities))
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            client = await svc._get_client()
+            if not client:
+                logger.error("Backfill latlng: could not authenticate")
+                return
 
-        updated = 0
-        for a in activities:
-            garmin_id = abs(a.strava_id)
-            stream = await svc._fetch_latlng_stream(client, garmin_id)
-            if stream:
-                a.latlng_stream = stream
-                updated += 1
-        await db.commit()
-        logger.info("GPS backfill complete: %d/%d activities updated", updated, len(activities))
+            result = await db.execute(
+                select(Activity)
+                .where(Activity.strava_id < 0)
+                .where(Activity.trainer == False)
+                .where(Activity.latlng_stream.is_(None))
+                .where(Activity.distance > 500)
+            )
+            activities = result.scalars().all()
+            total = len(activities)
+            logger.info("Backfilling GPS for %d Garmin activities", total)
 
-        # Trigger a full gemeente rescan with the newly available GPS data
-        try:
-            await _scan_all_gemeenten()
-        except Exception as e:
-            logger.warning("Gemeente rescan after backfill failed: %s", e)
+            updated = 0
+            for i, a in enumerate(activities):
+                try:
+                    garmin_id = abs(a.strava_id)
+                    stream = await svc._fetch_latlng_stream(client, garmin_id)
+                    if stream:
+                        a.latlng_stream = stream
+                        updated += 1
+                except Exception as e:
+                    logger.warning("Skipping activity %s during GPS backfill: %s", a.id, e)
+                    continue
+
+                if (i + 1) % 25 == 0:
+                    await db.commit()
+                    logger.info("GPS backfill progress: %d/%d (updated=%d)", i + 1, total, updated)
+
+            await db.commit()
+            logger.info("GPS backfill complete: %d/%d activities updated", updated, total)
+
+            try:
+                await _scan_all_gemeenten()
+            except Exception as e:
+                logger.warning("Gemeente rescan after backfill failed: %s", e)
 
     background_tasks.add_task(_backfill)
     return {"status": "Backfill started — check logs for progress"}
 
 
 @app.post("/trainiq/garmin/recalculate-tss")
-async def garmin_recalculate_tss(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
+async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
     """Recalculate TSS for existing Garmin-imported activities using real Normalized
     Power (fetched via TCX) instead of the previous average-power approximation."""
     async def _recalc():
+        from .models.database import AsyncSessionLocal
         from .services.garmin_import_service import GarminImportService
         from .services.training_science import calculate_normalized_power, estimate_tss_from_hr
 
-        ftp = await get_current_ftp(db)
-        svc = GarminImportService(
-            CONFIG.get("garmin_email", ""),
-            CONFIG.get("garmin_password", ""),
-            db,
-            ftp=ftp,
-        )
-        client = await svc._get_client()
-        if not client:
-            logger.error("Recalculate TSS: could not authenticate")
-            return
+        async with AsyncSessionLocal() as db:
+            current_ftp = await get_current_ftp(db)  # only used for GarminImportService init
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=current_ftp,
+            )
+            client = await svc._get_client()
+            if not client:
+                logger.error("Recalculate TSS: could not authenticate")
+                return
 
-        result = await db.execute(
-            select(Activity).where(Activity.strava_id < 0)
-        )
-        activities = result.scalars().all()
-        logger.info("Recalculating TSS for %d Garmin activities", len(activities))
+            result = await db.execute(
+                select(Activity).where(Activity.strava_id < 0)
+            )
+            activities = result.scalars().all()
+            total = len(activities)
+            logger.info("Recalculating TSS for %d Garmin activities using date-specific FTP", total)
 
-        updated = 0
-        for a in activities:
-            garmin_id = abs(a.strava_id)
-            old_tss = a.tss
-            power_stream = await svc._fetch_power_stream(client, garmin_id)
-            np_real = calculate_normalized_power(power_stream) if power_stream else None
+            updated = 0
+            for i, a in enumerate(activities):
+                try:
+                    garmin_id = abs(a.strava_id)
+                    old_tss = a.tss
+                    # Use the FTP that was actually in effect on this activity's date
+                    ftp = await get_ftp_at_date(db, a.start_date)
 
-            np_for_tss = np_real if np_real and np_real > 0 else a.average_watts
-            if np_for_tss and np_for_tss > 0 and ftp > 0 and a.elapsed_time:
-                if_est = np_for_tss / ftp
-                new_tss = (a.elapsed_time * np_for_tss * if_est) / (ftp * 3600) * 100
-                a.tss = round(min(new_tss, 500), 1)
-                a.tss_source = "power" if np_real else "power_avg"
-                if np_real:
-                    a.np = round(np_real)
-                    a.weighted_avg_watts = round(np_real)
-                    a.power_stream = power_stream
-                updated += 1
-                logger.info("Recalculated '%s': TSS %.0f -> %.0f (NP=%s)",
-                            a.name, old_tss or 0, a.tss, f"{np_real:.0f}W" if np_real else "n/a")
-            elif a.average_heartrate and a.elapsed_time:
-                new_tss = estimate_tss_from_hr(a.elapsed_time, a.average_heartrate,
-                                                a.max_heartrate or 185, a.sport_type)
-                a.tss = round(min(new_tss, 500), 1)
-                a.tss_source = "hr"
-                updated += 1
-                logger.info("Recalculated '%s' from HR: TSS %.0f -> %.0f",
-                            a.name, old_tss or 0, a.tss)
+                    power_stream = await svc._fetch_power_stream(client, garmin_id)
+                    np_real = calculate_normalized_power(power_stream) if power_stream else None
 
-        await db.commit()
-        logger.info("TSS recalculation complete: %d/%d activities updated", updated, len(activities))
-        await recalculate_pmc(db)
-        await recalculate_power_curve_and_ftp(db)
+                    np_for_tss = np_real if np_real and np_real > 0 else a.average_watts
+                    if np_for_tss and np_for_tss > 0 and ftp > 0 and a.elapsed_time:
+                        if_est = np_for_tss / ftp
+                        new_tss = (a.elapsed_time * np_for_tss * if_est) / (ftp * 3600) * 100
+                        a.tss = round(min(new_tss, 500), 1)
+                        a.tss_source = "power" if np_real else "power_avg"
+                        if np_real:
+                            a.np = round(np_real)
+                            a.weighted_avg_watts = round(np_real)
+                            a.power_stream = power_stream
+                        updated += 1
+                    elif a.average_heartrate and a.elapsed_time:
+                        new_tss = estimate_tss_from_hr(a.elapsed_time, a.average_heartrate,
+                                                        a.max_heartrate or 185, a.sport_type)
+                        a.tss = round(min(new_tss, 500), 1)
+                        a.tss_source = "hr"
+                        updated += 1
+                except Exception as e:
+                    logger.warning("Skipping activity %s during recalc: %s", a.id, e)
+                    continue
+
+                # Commit every 25 activities so progress isn't lost on failure/timeout
+                if (i + 1) % 25 == 0:
+                    await db.commit()
+                    logger.info("Recalc progress: %d/%d (updated=%d)", i + 1, total, updated)
+
+            await db.commit()
+            logger.info("TSS recalculation complete: %d/%d activities updated", updated, total)
+            await recalculate_pmc(db)
+            await recalculate_power_curve_and_ftp(db)
 
     background_tasks.add_task(_recalc)
     return {"status": "TSS recalculation started — check logs for progress"}
@@ -1242,7 +1259,10 @@ async def check_cp_changed(db: AsyncSession = Depends(get_db)):
 
 @app.post("/trainiq/analytics/accept-cp-as-ftp")
 async def accept_cp_as_ftp(db: AsyncSession = Depends(get_db)):
-    """User accepted the new CP as their FTP — update TrainingGoal.current_ftp."""
+    """User accepted the new CP as their FTP — creates a dated FTPHistory entry
+    effective today, so historical TSS calculations before this date are unaffected."""
+    from .models.database import FTPHistory
+
     cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
     )
@@ -1250,16 +1270,125 @@ async def accept_cp_as_ftp(db: AsyncSession = Depends(get_db)):
     if not cp_est:
         raise HTTPException(status_code=404, detail="No CP estimate found")
 
+    today = datetime.combine(datetime.now().date(), datetime.min.time())
+
+    # Upsert: if an entry already exists for today, update it rather than duplicate
+    existing = await db.execute(select(FTPHistory).where(FTPHistory.date == today))
+    entry = existing.scalar_one_or_none()
+    if entry:
+        entry.ftp = cp_est.cp
+        entry.source = "cp_accepted"
+    else:
+        db.add(FTPHistory(date=today, ftp=cp_est.cp, source="cp_accepted"))
+
+    # Keep legacy field in sync for any code still reading it directly
     goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     if not goal:
         goal = TrainingGoal()
         db.add(goal)
-
     goal.current_ftp = cp_est.cp
     goal.last_cp_notified = cp_est.cp
+
     await db.commit()
-    return {"status": "ok", "new_ftp": round(cp_est.cp)}
+    return {"status": "ok", "new_ftp": round(cp_est.cp), "effective_date": today.date().isoformat()}
+
+
+@app.get("/trainiq/ftp-history")
+async def get_ftp_history(db: AsyncSession = Depends(get_db)):
+    """List all FTP history entries, most recent first."""
+    from .models.database import FTPHistory
+    result = await db.execute(select(FTPHistory).order_by(FTPHistory.date.desc()))
+    entries = result.scalars().all()
+    return [
+        {"id": e.id, "date": e.date.date().isoformat(), "ftp": e.ftp,
+         "source": e.source, "notes": e.notes}
+        for e in entries
+    ]
+
+
+@app.post("/trainiq/ftp-history")
+async def add_ftp_history(request: Request, db: AsyncSession = Depends(get_db)):
+    """Add or update a manual FTP entry for a specific date."""
+    from .models.database import FTPHistory
+    data = await request.json()
+    date_str = data.get("date")
+    ftp = data.get("ftp")
+    notes = data.get("notes")
+    if not date_str or not ftp:
+        raise HTTPException(status_code=400, detail="date and ftp are required")
+
+    entry_date = datetime.combine(datetime.fromisoformat(date_str).date(), datetime.min.time())
+    existing = await db.execute(select(FTPHistory).where(FTPHistory.date == entry_date))
+    entry = existing.scalar_one_or_none()
+    if entry:
+        entry.ftp = float(ftp)
+        entry.source = "manual"
+        entry.notes = notes
+    else:
+        entry = FTPHistory(date=entry_date, ftp=float(ftp), source="manual", notes=notes)
+        db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return {"status": "ok", "id": entry.id, "date": entry.date.date().isoformat(), "ftp": entry.ftp}
+
+
+@app.delete("/trainiq/ftp-history/{entry_id}")
+async def delete_ftp_history(entry_id: int, db: AsyncSession = Depends(get_db)):
+    from .models.database import FTPHistory
+    result = await db.execute(select(FTPHistory).where(FTPHistory.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await db.delete(entry)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@app.get("/trainiq/weight-history")
+async def get_weight_history(db: AsyncSession = Depends(get_db)):
+    from .models.database import WeightHistory
+    result = await db.execute(select(WeightHistory).order_by(WeightHistory.date.desc()))
+    entries = result.scalars().all()
+    return [
+        {"id": e.id, "date": e.date.date().isoformat(), "weight_kg": e.weight_kg, "source": e.source}
+        for e in entries
+    ]
+
+
+@app.post("/trainiq/weight-history")
+async def add_weight_history(request: Request, db: AsyncSession = Depends(get_db)):
+    from .models.database import WeightHistory
+    data = await request.json()
+    date_str = data.get("date")
+    weight_kg = data.get("weight_kg")
+    if not date_str or not weight_kg:
+        raise HTTPException(status_code=400, detail="date and weight_kg are required")
+
+    entry_date = datetime.combine(datetime.fromisoformat(date_str).date(), datetime.min.time())
+    existing = await db.execute(select(WeightHistory).where(WeightHistory.date == entry_date))
+    entry = existing.scalar_one_or_none()
+    if entry:
+        entry.weight_kg = float(weight_kg)
+        entry.source = "manual"
+    else:
+        entry = WeightHistory(date=entry_date, weight_kg=float(weight_kg), source="manual")
+        db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return {"status": "ok", "id": entry.id, "date": entry.date.date().isoformat(), "weight_kg": entry.weight_kg}
+
+
+@app.delete("/trainiq/weight-history/{entry_id}")
+async def delete_weight_history(entry_id: int, db: AsyncSession = Depends(get_db)):
+    from .models.database import WeightHistory
+    result = await db.execute(select(WeightHistory).where(WeightHistory.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    await db.delete(entry)
+    await db.commit()
+    return {"status": "deleted"}
 
 
 @app.post("/trainiq/analytics/dismiss-cp-notification")
@@ -1424,11 +1553,23 @@ async def create_goal(request: Request, db: AsyncSession = Depends(get_db)):
 
 @app.patch("/trainiq/goals/ftp")
 async def update_user_ftp(request: Request, db: AsyncSession = Depends(get_db)):
-    """Update only the user FTP on the active goal. Creates goal stub if none exists."""
+    """Set FTP effective today. Writes an FTPHistory entry so historical TSS before
+    today is unaffected; also updates the legacy TrainingGoal.current_ftp field."""
+    from .models.database import FTPHistory
+
     data = await request.json()
     new_ftp = float(data.get("ftp", 0))
     if new_ftp < 50 or new_ftp > 600:
         raise HTTPException(status_code=400, detail="FTP must be between 50 and 600W")
+
+    today = datetime.combine(datetime.now().date(), datetime.min.time())
+    existing = await db.execute(select(FTPHistory).where(FTPHistory.date == today))
+    entry = existing.scalar_one_or_none()
+    if entry:
+        entry.ftp = new_ftp
+        entry.source = "manual"
+    else:
+        db.add(FTPHistory(date=today, ftp=new_ftp, source="manual"))
 
     goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
@@ -2144,19 +2285,73 @@ async def delete_manual_activity(activity_id: int, db: AsyncSession = Depends(ge
 
 
 async def get_current_ftp(db: AsyncSession) -> float:
-    """Returns FTP for TSS/zone calculations.
-    Priority: 1) user-set TrainingGoal.current_ftp, 2) auto CP estimate, 3) config initial."""
-    # User-set FTP takes precedence
+    """Returns the most recent FTP for TSS/zone calculations and workout targets.
+    Priority: 1) latest FTPHistory entry, 2) legacy TrainingGoal.current_ftp,
+    3) auto CP estimate, 4) config initial."""
+    from .models.database import FTPHistory
+
+    hist_result = await db.execute(
+        select(FTPHistory).order_by(FTPHistory.date.desc()).limit(1)
+    )
+    hist = hist_result.scalar_one_or_none()
+    if hist:
+        return float(hist.ftp)
+
+    # Legacy fallback for installs with data predating FTPHistory
     goal_result = await db.execute(select(TrainingGoal).order_by(TrainingGoal.id.desc()).limit(1))
     goal = goal_result.scalar_one_or_none()
     if goal and goal.current_ftp:
         return float(goal.current_ftp)
-    # Fall back to auto CP
+
     cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
     )
     estimate = cp_result.scalar_one_or_none()
     return estimate.cp if estimate else float(CONFIG.get("ftp_initial", 200))
+
+
+async def get_ftp_at_date(db: AsyncSession, target_date: datetime) -> float:
+    """Returns the FTP that was in effect on a specific date — i.e. the most recent
+    FTPHistory entry on or before target_date. Used for accurate historical TSS
+    recalculation, since FTP changes over time."""
+    from .models.database import FTPHistory
+
+    result = await db.execute(
+        select(FTPHistory)
+        .where(FTPHistory.date <= target_date)
+        .order_by(FTPHistory.date.desc())
+        .limit(1)
+    )
+    hist = result.scalar_one_or_none()
+    if hist:
+        return float(hist.ftp)
+
+    # No history before this date — use the earliest known FTP if one exists later,
+    # otherwise fall back to config initial
+    earliest_result = await db.execute(
+        select(FTPHistory).order_by(FTPHistory.date.asc()).limit(1)
+    )
+    earliest = earliest_result.scalar_one_or_none()
+    if earliest:
+        return float(earliest.ftp)
+
+    return float(CONFIG.get("ftp_initial", 200))
+
+
+async def get_weight_at_date(db: AsyncSession, target_date: datetime) -> float:
+    """Returns bodyweight in effect on a specific date, for W/kg calculations."""
+    from .models.database import WeightHistory
+
+    result = await db.execute(
+        select(WeightHistory)
+        .where(WeightHistory.date <= target_date)
+        .order_by(WeightHistory.date.desc())
+        .limit(1)
+    )
+    hist = result.scalar_one_or_none()
+    if hist:
+        return float(hist.weight_kg)
+    return float(CONFIG.get("athlete_weight_kg", 70))
 
 
 def _activity_to_dict(a: Activity) -> Dict:

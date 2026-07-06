@@ -215,6 +215,31 @@ class EddingtonMilestone(Base):
     recorded_at = Column(DateTime, default=datetime.utcnow)
 
 
+class FTPHistory(Base):
+    """Date-stamped FTP entries. FTP changes over time, so TSS recalculation for a
+    given activity should use whichever FTP was in effect on that activity's date,
+    not the athlete's current FTP."""
+    __tablename__ = "ftp_history"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, index=True, unique=True)   # date this FTP became effective
+    ftp = Column(Float, nullable=False)
+    source = Column(String, default="manual")          # "manual" | "cp_accepted"
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WeightHistory(Base):
+    """Date-stamped bodyweight entries, used for W/kg calculations over time."""
+    __tablename__ = "weight_history"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, index=True, unique=True)
+    weight_kg = Column(Float, nullable=False)
+    source = Column(String, default="manual")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # Keep old names as aliases for any legacy references
 MunicipalityBoundary = GemeenteBoundary
 VisitedMunicipality = VisitedGemeente

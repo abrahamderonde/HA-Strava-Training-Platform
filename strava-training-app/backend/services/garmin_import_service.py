@@ -227,6 +227,24 @@ class GarminImportService:
             logger.debug("Could not fetch TCX power stream for %s: %s", garmin_id, e)
             return None
 
+    async def _get_ftp_at_date(self, target_date: datetime) -> float:
+        """Look up the FTP that was in effect on a given date from FTPHistory,
+        falling back to self.ftp (current) if no history exists yet."""
+        from .models.database import FTPHistory
+        try:
+            result = await self.db.execute(
+                select(FTPHistory)
+                .where(FTPHistory.date <= target_date)
+                .order_by(FTPHistory.date.desc())
+                .limit(1)
+            )
+            hist = result.scalar_one_or_none()
+            if hist:
+                return float(hist.ftp)
+        except Exception as e:
+            logger.debug("FTP history lookup failed, using current FTP: %s", e)
+        return float(self.ftp) if self.ftp else 200.0
+
     async def import_activity(self, raw: Dict, fetch_streams: bool = True) -> Optional[Activity]:
         """Import a single Garmin activity into the database."""
         parsed = self._parse_activity(raw)
@@ -260,9 +278,9 @@ class GarminImportService:
             elapsed = int(parsed.get("elapsed_time") or 0)
             avg_hr = float(parsed.get("average_heartrate") or 0) or None
             max_hr = float(parsed.get("max_heartrate") or 185)
-            ftp = float(self.ftp) if self.ftp else 200.0
+            ftp = await self._get_ftp_at_date(parsed["start_date"])
 
-            if not self.ftp or self.ftp == 200.0:
+            if not self.ftp or ftp == 200.0:
                 logger.warning(
                     "Using fallback FTP=200W for '%s' — if your real FTP differs, "
                     "TSS will be wrong until recalculated. self.ftp=%s",
