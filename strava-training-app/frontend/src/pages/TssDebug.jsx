@@ -28,25 +28,44 @@ export default function TssDebug() {
   const [data, setData] = useState(null)
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [showAll, setShowAll] = useState(false)
   const [sortBy, setSortBy] = useState('date')
 
   useEffect(() => {
     setLoading(true)
+    setError(null)
     fetch(`/trainiq/debug/tss-detail?days=${days}`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`)
+        return r.json()
+      })
       .then(d => { setData(d); setLoading(false) })
-      .catch(() => setLoading(false))
+      .catch(e => { setError(e.message); setLoading(false) })
   }, [days])
 
   if (loading) return <div style={{ padding: 20, color: 'var(--muted)' }}>Loading…</div>
+  if (error) return (
+    <div style={{ padding: 20 }}>
+      <div className="page-header">
+        <h1 className="page-title">TSS Debug</h1>
+      </div>
+      <div style={{ color: '#ef4444', fontSize: 14 }}>
+        Error loading data: {error}
+      </div>
+    </div>
+  )
   if (!data) return <div style={{ padding: 20, color: 'var(--muted)' }}>No data.</div>
 
-  const rows = showAll ? data.all : data.flagged
+  const rows = showAll ? (data.all || []) : (data.flagged || [])
   const sorted = [...rows].sort((a, b) => {
-    if (sortBy === 'tss') return (b.stored_tss || 0) - (a.stored_tss || 0)
-    if (sortBy === 'if') return (b.if || 0) - (a.if || 0)
-    return new Date(b.date) - new Date(a.date)
+    try {
+      if (sortBy === 'tss') return (b?.stored_tss || 0) - (a?.stored_tss || 0)
+      if (sortBy === 'if') return (b?.if || 0) - (a?.if || 0)
+      return new Date(b?.date || 0) - new Date(a?.date || 0)
+    } catch {
+      return 0
+    }
   })
 
   return (
