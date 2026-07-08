@@ -10,6 +10,7 @@ import Eddington from './pages/Eddington'
 import Settings from './pages/Settings'
 import CommuteGenerator from './pages/CommuteGenerator'
 import Stats from './pages/Stats'
+import TssDebug from './pages/TssDebug'
 import {
   LayoutDashboard, Calendar as CalIcon, TrendingUp,
   Zap, Target, Settings as SettingsIcon, Activity,
@@ -150,6 +151,7 @@ export default function App() {
             <Route path="/stats"       element={<Stats />} />
             <Route path="/commutes"     element={<CommuteGenerator />} />
             <Route path="/settings"     element={<Settings />} />
+            <Route path="/debug/tss"    element={<TssDebug />} />
           </Routes>
         </main>
       </div>

@@ -326,6 +326,9 @@ export default function Settings() {
         }}>
           Recalculate TSS + Rebuild PMC
         </button>
+        <a href="/debug/tss" style={{ marginLeft: 10, fontSize: 12, color: 'var(--accent)' }}>
+          🔍 View TSS calculation details for last month
+        </a>
       </div>
 
       {/* Backfill GPS */}

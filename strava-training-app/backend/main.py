@@ -662,7 +662,78 @@ async def recalculate_all_tss(background_tasks: BackgroundTasks):
 
 
 
-@app.get("/trainiq/debug/tss-stats")
+@app.get("/trainiq/debug/tss-detail")
+async def tss_detail(days: int = 30, db: AsyncSession = Depends(get_db)):
+    """Debug: full TSS calculation breakdown per activity for the last N days,
+    to diagnose why some activities show unexpectedly high/low TSS."""
+    cutoff = datetime.now() - timedelta(days=days)
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.start_date >= cutoff)
+        .order_by(Activity.start_date.desc())
+    )
+    acts = result.scalars().all()
+
+    rows = []
+    for a in acts:
+        elapsed_h = (a.elapsed_time or 0) / 3600
+        ftp_at_date = await get_ftp_at_date(db, a.start_date)
+
+        # Reconstruct the IF and expected TSS given stored values, for comparison
+        np_used = a.np or a.weighted_avg_watts or a.average_watts
+        if_calc = round(np_used / ftp_at_date, 3) if np_used and ftp_at_date else None
+        expected_tss = (
+            round(elapsed_h * (if_calc ** 2) * 100, 1)
+            if if_calc is not None else None
+        )
+
+        # Flags to help spot the root cause at a glance
+        flags = []
+        if a.tss and a.tss > 250:
+            flags.append("very_high_tss")
+        if if_calc and if_calc > 1.15:
+            flags.append("high_if")
+        if if_calc and if_calc < 0.3 and a.average_watts:
+            flags.append("low_if_with_power")
+        if a.average_watts and a.np and a.np < a.average_watts * 0.9:
+            flags.append("np_below_avg")  # NP should never be meaningfully below avg power
+        if expected_tss and a.tss and abs(expected_tss - a.tss) > 5:
+            flags.append("stored_tss_mismatch")  # stored TSS doesn't match recomputation
+        if a.tss_source is None and a.tss:
+            flags.append("no_source_tag")  # old data predating tss_source tracking
+        if not a.average_watts and not a.average_heartrate and a.tss:
+            flags.append("tss_without_power_or_hr")  # RPE-based, or stale
+
+        rows.append({
+            "id": a.id,
+            "date": a.start_date.isoformat(),
+            "name": a.name,
+            "sport": a.sport_type,
+            "elapsed_min": round((a.elapsed_time or 0) / 60),
+            "trainer": a.trainer,
+            "tss_source": a.tss_source,
+            "stored_tss": round(a.tss, 1) if a.tss else None,
+            "expected_tss": expected_tss,
+            "ftp_used": round(ftp_at_date, 1),
+            "average_watts": round(a.average_watts, 1) if a.average_watts else None,
+            "np": round(a.np, 1) if a.np else None,
+            "weighted_avg_watts": round(a.weighted_avg_watts, 1) if a.weighted_avg_watts else None,
+            "if": if_calc,
+            "average_heartrate": a.average_heartrate,
+            "rpe": a.rpe,
+            "flags": flags,
+        })
+
+    flagged = [r for r in rows if r["flags"]]
+    return {
+        "total_activities": len(rows),
+        "flagged_count": len(flagged),
+        "flagged": flagged,
+        "all": rows,
+    }
+
+
+
 async def tss_stats(db: AsyncSession = Depends(get_db)):
     """Debug: show TSS distribution to diagnose CTL discrepancy."""
     from sqlalchemy import func
