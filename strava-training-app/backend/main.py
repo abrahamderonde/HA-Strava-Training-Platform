@@ -488,6 +488,7 @@ async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
                 try:
                     garmin_id = abs(a.strava_id)
                     old_tss = a.tss
+                    if_est = 0.0
                     # Use the FTP that was actually in effect on this activity's date
                     ftp = await get_ftp_at_date(db, a.start_date)
 
@@ -511,6 +512,19 @@ async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
                         a.tss = round(min(new_tss, 500), 1)
                         a.tss_source = "hr"
                         updated += 1
+
+                    # Log full breakdown for any activity with high TSS, so root causes
+                    # are visible directly in the addon log without a separate debug page
+                    if a.tss and a.tss > 150:
+                        logger.warning(
+                            "HIGH TSS '%s' (%s): TSS=%.0f (was %.0f) | elapsed=%dmin | "
+                            "FTP_used=%.0fW | avg_power=%s | NP=%s | IF=%.2f | source=%s",
+                            a.name, a.start_date.date().isoformat(), a.tss, old_tss or 0,
+                            (a.elapsed_time or 0) // 60, ftp,
+                            f"{a.average_watts:.0f}W" if a.average_watts else "none",
+                            f"{np_for_tss:.0f}W" if np_for_tss else "none",
+                            if_est, a.tss_source
+                        )
                 except Exception as e:
                     logger.warning("Skipping activity %s during recalc: %s", a.id, e)
                     continue
