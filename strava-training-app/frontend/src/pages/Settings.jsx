@@ -87,6 +87,14 @@ function GarminImportCard() {
         >
           🔄 Recalculate TSS
         </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('backfill-missing-power?days=30', 'Missing power check')}
+          disabled={!authenticated || importing}
+          title="Re-check recent activities with no power data — Garmin sometimes omits it right after sync"
+        >
+          ⚡ Recover Missing Power
+        </button>
       </div>
 
       {msg && (

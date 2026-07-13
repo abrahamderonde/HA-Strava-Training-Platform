@@ -126,6 +126,23 @@ class GarminImportService:
             logger.error("Garmin import auth failed: %s", e)
             return None
 
+    async def _fetch_power_fallback(self, client, garmin_id: int) -> Optional[float]:
+        """Some Garmin summary-list responses (get_activities_by_date) omit avgPower
+        even when the activity has power data — this happens especially for recently
+        synced activities where Garmin's backend hasn't finished aggregating summary
+        stats yet. Fall back to the single-activity detail endpoint, which is more
+        complete, before giving up on power entirely."""
+        try:
+            detail = client.get_activity(str(garmin_id))
+            summary = detail.get("summaryDTO") or detail
+            for key in ("averagePower", "avgPower"):
+                val = summary.get(key)
+                if val:
+                    return float(val)
+        except Exception as e:
+            logger.debug("Power fallback fetch failed for %s: %s", garmin_id, e)
+        return None
+
     def _parse_activity(self, raw: Dict) -> Optional[Dict]:
         """Parse a raw Garmin activity dict into our Activity field dict."""
         def safe_float(val, default=None):
@@ -260,16 +277,33 @@ class GarminImportService:
         if existing.scalar_one_or_none():
             return None  # Already imported
 
-        # Fetch power stream (TCX-based, reliable) and compute real Normalized Power
+        # Fetch power stream (TCX-based, reliable) and compute real Normalized Power.
+        # Always attempt for non-trainer activities, even if the summary-list response
+        # didn't include average_watts — Garmin's list endpoint sometimes omits power
+        # for recently-synced activities even when the ride genuinely has power data.
         power_stream = None
         np_real = None
-        should_fetch_power = fetch_streams and bool(parsed.get("average_watts"))
-        if should_fetch_power:
+        avg_watts_fallback = None
+        if fetch_streams and not parsed.get("trainer"):
             client = await self._get_client()
             if client:
-                power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
-                if power_stream:
-                    np_real = calculate_normalized_power(power_stream)
+                if not parsed.get("average_watts"):
+                    avg_watts_fallback = await self._fetch_power_fallback(client, parsed["garmin_id"])
+                    if avg_watts_fallback:
+                        logger.info(
+                            "Recovered missing avg power for '%s' via detail fallback: %.0fW",
+                            parsed.get("name"), avg_watts_fallback
+                        )
+                        parsed["average_watts"] = avg_watts_fallback
+                    else:
+                        logger.debug(
+                            "No power found for '%s' via list or detail endpoint — "
+                            "likely genuinely has no power meter data", parsed.get("name")
+                        )
+                if parsed.get("average_watts"):
+                    power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
+                    if power_stream:
+                        np_real = calculate_normalized_power(power_stream)
 
         # Calculate TSS using real NP when available, falling back to avg power, then HR
         tss = None

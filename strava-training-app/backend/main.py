@@ -454,6 +454,72 @@ async def garmin_backfill_latlng(background_tasks: BackgroundTasks):
     return {"status": "Backfill started — check logs for progress"}
 
 
+@app.post("/trainiq/garmin/backfill-missing-power")
+async def garmin_backfill_missing_power(
+    background_tasks: BackgroundTasks,
+    days: int = 30,
+):
+    """Re-check recent Garmin-imported activities that have no power data, using
+    the single-activity detail endpoint as a fallback — Garmin's list endpoint
+    sometimes omits avgPower for recently-synced rides even when it exists."""
+    async def _backfill():
+        from .models.database import AsyncSessionLocal
+        from .services.garmin_import_service import GarminImportService
+        from .services.training_science import calculate_normalized_power
+
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            client = await svc._get_client()
+            if not client:
+                logger.error("Backfill missing power: could not authenticate")
+                return
+
+            cutoff = datetime.now() - timedelta(days=days)
+            result = await db.execute(
+                select(Activity)
+                .where(Activity.strava_id < 0)
+                .where(Activity.trainer == False)
+                .where(Activity.average_watts.is_(None))
+                .where(Activity.start_date >= cutoff)
+            )
+            activities = result.scalars().all()
+            logger.info("Checking %d recent power-less Garmin activities for missing power", len(activities))
+
+            recovered = 0
+            for a in activities:
+                garmin_id = abs(a.strava_id)
+                avg_p = await svc._fetch_power_fallback(client, garmin_id)
+                if avg_p:
+                    a.average_watts = avg_p
+                    power_stream = await svc._fetch_power_stream(client, garmin_id)
+                    np_real = calculate_normalized_power(power_stream) if power_stream else None
+                    np_for_tss = np_real or avg_p
+                    date_ftp = await get_ftp_at_date(db, a.start_date)
+                    if_est = np_for_tss / date_ftp if date_ftp else 0
+                    a.tss = round(min((a.elapsed_time or 0) * np_for_tss * if_est / (date_ftp * 3600) * 100, 500), 1)
+                    a.tss_source = "power" if np_real else "power_avg"
+                    if np_real:
+                        a.np = round(np_real)
+                        a.weighted_avg_watts = round(np_real)
+                        a.power_stream = power_stream
+                    recovered += 1
+                    logger.info("Recovered power for '%s': %.0fW, TSS=%.0f", a.name, avg_p, a.tss)
+
+            await db.commit()
+            logger.info("Power backfill complete: recovered %d/%d activities", recovered, len(activities))
+            if recovered:
+                await recalculate_pmc(db)
+
+    background_tasks.add_task(_backfill)
+    return {"status": f"Checking last {days} days for missing power — check logs for results"}
+
+
 @app.post("/trainiq/garmin/recalculate-tss")
 async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
     """Recalculate TSS for existing Garmin-imported activities using real Normalized
