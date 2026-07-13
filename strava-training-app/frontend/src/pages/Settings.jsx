@@ -102,6 +102,77 @@ function GarminImportCard() {
 }
 
 
+function DuplicateFinderCard() {
+  const [dupes, setDupes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [resolving, setResolving] = useState(null)
+
+  const scan = async () => {
+    setLoading(true)
+    const res = await fetch('/trainiq/debug/find-duplicates')
+    const d = await res.json()
+    setDupes(d)
+    setLoading(false)
+  }
+
+  const resolve = async (keepId, deleteId) => {
+    setResolving(deleteId)
+    await fetch(`/trainiq/debug/resolve-duplicate/${keepId}/${deleteId}`, { method: 'DELETE' })
+    setResolving(null)
+    scan() // refresh list
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      <div className="card-title">Find Duplicate Activities</div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
+        <p>If a ride was imported from both Strava and Garmin, its TSS gets counted twice in the PMC,
+           causing days to show inflated (often ~2×) training load.</p>
+        <p style={{ marginTop: 8 }}>This scans for same-day activities with near-identical duration — a strong signal of the same ride imported twice.</p>
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={scan} disabled={loading}>
+        {loading ? 'Scanning…' : '🔍 Scan for duplicates'}
+      </button>
+
+      {dupes && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+            Found {dupes.duplicate_pairs_found} potential duplicate pair{dupes.duplicate_pairs_found !== 1 ? 's' : ''}
+          </div>
+          {dupes.duplicates.map((d, i) => (
+            <div key={i} style={{ background: 'var(--surface2)', borderRadius: 8, padding: '12px 14px', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 8, fontWeight: 600 }}>
+                {d.date} · combined TSS shown in PMC: {d.combined_tss}
+              </div>
+              {[d.activity_1, d.activity_2].map((act, idx) => (
+                <div key={act.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '6px 0', borderTop: idx === 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: act.source === 'garmin' ? '#3b82f6' : '#fc5200', fontWeight: 600, marginRight: 6 }}>
+                      {act.source === 'garmin' ? '⌚ Garmin' : '🟠 Strava'}
+                    </span>
+                    {act.name} — {act.elapsed_min}min, TSS {act.tss?.toFixed(0) ?? '—'}
+                  </div>
+                  <button
+                    onClick={() => resolve(idx === 0 ? d.activity_2.id : d.activity_1.id, act.id)}
+                    disabled={resolving === act.id}
+                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                             borderRadius: 4, padding: '3px 10px', fontSize: 11, color: '#ef4444', cursor: 'pointer' }}>
+                    {resolving === act.id ? 'Deleting…' : 'Delete this one'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
+          {dupes.duplicate_pairs_found === 0 && (
+            <div style={{ color: 'var(--muted)', fontSize: 13 }}>No duplicates found.</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Settings() {
   const [status, setStatus] = useState(null)
   const [config, setConfig] = useState(null)
@@ -330,6 +401,8 @@ export default function Settings() {
           High-TSS activities (&gt;150) are logged in detail — check the add-on log after recalculating
         </span>
       </div>
+
+      <DuplicateFinderCard />
 
       {/* Backfill GPS */}
       <div className="card" style={{ marginTop: 24 }}>

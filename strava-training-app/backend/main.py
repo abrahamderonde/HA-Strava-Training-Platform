@@ -507,8 +507,12 @@ async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
                             a.power_stream = power_stream
                         updated += 1
                     elif a.average_heartrate and a.elapsed_time:
-                        new_tss = estimate_tss_from_hr(a.elapsed_time, a.average_heartrate,
-                                                        a.max_heartrate or 185, a.sport_type)
+                        new_tss = estimate_tss_from_hr(
+                            a.elapsed_time, a.average_heartrate,
+                            a.max_heartrate or CONFIG.get("max_hr", 185),
+                            a.sport_type,
+                            rest_hr=CONFIG.get("rest_hr", 50),
+                        )
                         a.tss = round(min(new_tss, 500), 1)
                         a.tss_source = "hr"
                         updated += 1
@@ -676,7 +680,109 @@ async def recalculate_all_tss(background_tasks: BackgroundTasks):
 
 
 
-@app.get("/trainiq/debug/tss-detail")
+@app.get("/trainiq/debug/day-activities")
+async def debug_day_activities(date: str, db: AsyncSession = Depends(get_db)):
+    """Debug: show ALL activities stored for a specific date (YYYY-MM-DD),
+    including duplicates from both Strava and Garmin imports, to diagnose
+    PMC values that seem doubled or otherwise wrong."""
+    target_date = datetime.fromisoformat(date)
+    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.start_date >= day_start)
+        .where(Activity.start_date < day_end)
+        .order_by(Activity.start_date)
+    )
+    acts = result.scalars().all()
+
+    total_tss = sum(a.tss or 0 for a in acts)
+
+    return {
+        "date": date,
+        "activity_count": len(acts),
+        "total_tss_summed": round(total_tss, 1),
+        "activities": [
+            {
+                "id": a.id,
+                "strava_id": a.strava_id,
+                "name": a.name,
+                "start_date": a.start_date.isoformat(),
+                "tss": a.tss,
+                "tss_source": a.tss_source,
+                "synthetic": a.synthetic,
+                "source": "garmin" if (a.strava_id or 0) < 0 else "strava" if a.strava_id else "manual/synthetic",
+            }
+            for a in acts
+        ],
+    }
+
+
+@app.get("/trainiq/debug/find-duplicates")
+async def find_duplicate_activities(db: AsyncSession = Depends(get_db)):
+    """Find activities that likely represent the same real-world ride imported
+    twice — once via Strava (positive strava_id) and once via Garmin (negative
+    strava_id) — by matching same date + similar duration. These cause TSS to
+    be double-counted in the PMC."""
+    result = await db.execute(
+        select(Activity)
+        .where(Activity.synthetic == False)
+        .order_by(Activity.start_date)
+    )
+    acts = result.scalars().all()
+
+    # Group by date
+    from collections import defaultdict
+    by_day = defaultdict(list)
+    for a in acts:
+        day = a.start_date.date().isoformat()
+        by_day[day].append(a)
+
+    duplicates = []
+    for day, day_acts in by_day.items():
+        if len(day_acts) < 2:
+            continue
+        # Check every pair on this day for likely duplication:
+        # similar elapsed_time (within 5%) is a strong signal of the same ride
+        for i in range(len(day_acts)):
+            for j in range(i + 1, len(day_acts)):
+                a1, a2 = day_acts[i], day_acts[j]
+                t1, t2 = a1.elapsed_time or 0, a2.elapsed_time or 0
+                if t1 == 0 or t2 == 0:
+                    continue
+                ratio = max(t1, t2) / min(t1, t2)
+                if ratio < 1.05:  # durations within 5% of each other
+                    duplicates.append({
+                        "date": day,
+                        "activity_1": {"id": a1.id, "strava_id": a1.strava_id, "name": a1.name,
+                                       "elapsed_min": t1 // 60, "tss": a1.tss,
+                                       "source": "garmin" if (a1.strava_id or 0) < 0 else "strava"},
+                        "activity_2": {"id": a2.id, "strava_id": a2.strava_id, "name": a2.name,
+                                       "elapsed_min": t2 // 60, "tss": a2.tss,
+                                       "source": "garmin" if (a2.strava_id or 0) < 0 else "strava"},
+                        "combined_tss": round((a1.tss or 0) + (a2.tss or 0), 1),
+                    })
+
+    return {"duplicate_pairs_found": len(duplicates), "duplicates": duplicates}
+
+
+@app.delete("/trainiq/debug/resolve-duplicate/{keep_id}/{delete_id}")
+async def resolve_duplicate(keep_id: int, delete_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete one side of a duplicate pair (identified via find-duplicates) and
+    rebuild the PMC. keep_id is not modified; delete_id is removed."""
+    result = await db.execute(select(Activity).where(Activity.id == delete_id))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    name = activity.name
+    await db.delete(activity)
+    await db.commit()
+    await recalculate_pmc(db)
+    return {"status": "deleted", "deleted_id": delete_id, "kept_id": keep_id, "name": name}
+
+
+
 async def tss_detail(days: int = 30, db: AsyncSession = Depends(get_db)):
     """Debug: full TSS calculation breakdown per activity for the last N days,
     to diagnose why some activities show unexpectedly high/low TSS."""
