@@ -248,24 +248,34 @@ function AddActivityPanel({ date, onDone }) {
   const [type, setType] = useState('Ride')
   const [commute, setCommute] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
 
   const save = async () => {
     if (!tss || !dur) return
     setSaving(true)
-    await fetch('/trainiq/planning/workouts/add-manual', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: format(date, 'yyyy-MM-dd') + 'T12:00:00',
-        title: title || (commute ? 'Commute' : 'Manual activity'),
-        tss: parseFloat(tss),
-        duration_minutes: parseInt(dur),
-        sport_type: type,
-        commute,
-      }),
-    })
-    setSaving(false)
-    onDone()
+    setError(null)
+    try {
+      const res = await fetch('/trainiq/planning/workouts/add-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: format(date, 'yyyy-MM-dd') + 'T12:00:00',
+          title: title || (commute ? 'Commute' : 'Manual activity'),
+          tss: parseFloat(tss),
+          duration_minutes: parseInt(dur),
+          sport_type: type,
+          commute,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`Server returned ${res.status}: ${body.slice(0, 150)}`)
+      }
+      onDone()
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
   }
 
   return (
@@ -310,6 +320,9 @@ function AddActivityPanel({ date, onDone }) {
                    opacity: (!tss || !dur) ? 0.4 : 1 }}>
           {saving ? 'Saving…' : 'Add activity'}
         </button>
+        {error && (
+          <div style={{ marginTop: 6, fontSize: 11, color: '#ef4444' }}>{error}</div>
+        )}
       </div>
     </div>
   )

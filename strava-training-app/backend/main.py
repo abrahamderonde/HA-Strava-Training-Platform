@@ -849,6 +849,7 @@ async def resolve_duplicate(keep_id: int, delete_id: int, db: AsyncSession = Dep
 
 
 
+@app.get("/trainiq/debug/tss-detail")
 async def tss_detail(days: int = 30, db: AsyncSession = Depends(get_db)):
     """Debug: full TSS calculation breakdown per activity for the last N days,
     to diagnose why some activities show unexpectedly high/low TSS."""
@@ -920,6 +921,7 @@ async def tss_detail(days: int = 30, db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/debug/tss-stats")
 async def tss_stats(db: AsyncSession = Depends(get_db)):
     """Debug: show TSS distribution to diagnose CTL discrepancy."""
     from sqlalchemy import func
@@ -1386,6 +1388,7 @@ async def get_pmc_future(days: int = 60, db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/analytics/pmc-all")
 async def get_pmc_all(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(TrainingMetrics).order_by(TrainingMetrics.date)
@@ -2456,6 +2459,7 @@ async def schedule_ftp_test(request: Request, db: AsyncSession = Depends(get_db)
 
 
 
+@app.post("/trainiq/planning/workouts/add-manual")
 async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_db)):
     """Add an unplanned manual activity directly to the PMC (no planned workout needed)."""
     data = await request.json()
