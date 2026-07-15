@@ -5,7 +5,7 @@
 ## 1. Eddington map upgrades
 
 **Effort:** Low
-**Status:** implemented 11-06 - testing
+**Status:** implemented 11-06 - testing - seems finished
 **Notes:**: Count logic tweak
 
 **progress bar**
@@ -13,33 +13,10 @@
 
 ---
 
-## 2. Dashboard tooltip with activity name
-
-**Effort:** low
-**Status:** implemented 11-06 - testing
-**Notes:**: Just add to existing PMC tooltip
-
-New: When you go over the graph, you see the summary of that day.. TSS etc. Would be nice to also see the name of the activity of that day. If there are multiple it is sufficient to show only the activity with the largest TSS. 
-
----
-
-## 3. Merge dashboard
-
-**Effort:** Medium
-**Status:** implemented 11-06 - testing
-**Notes:**: New page layout
-
-Merge with PMC. Little added value of PMC. 
-Requirements.
-Show graph as in PMC. This one is more clear
-Show selectors for selected time
-
----
-
 ## 4. FTP Testing
 
 **Effort:** low
-**Status:** Open
+**Status:** implemented - testing - seems finished
 
 **FTP testing**
 - I will give you the template workout with steps
@@ -52,7 +29,7 @@ Show selectors for selected time
 ## 5. PMC upgrades
 
 **Effort:** low
-**Status:** Pending
+**Status:** implemented - testing
 **Notes** Math is straightforward, UI needs work
 
 **Show planning / future**
@@ -63,7 +40,7 @@ Show selectors for selected time
 ## 6. Power curve 'ideal' overlay
 
 **Effort:** Medium / high
-**Status:** Open
+**Status:** implemented - testing
 **Notes:** CP model already there, needs curve math
 
 Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you could do, based on your power curve.
@@ -91,13 +68,14 @@ Hide from side bar, only access page from setting page (add button?), as this is
 ## 9. Gui improvements for mobile
 
 **Effort:** Medium - High
-**Status:** Pending
+**Status:** implemented - testing
 
 **GUI improvements for mobile**
 - On mobile the pages don't show up very nicely.
-- Maybe the side bar can collapse or so
+- Bottom bar instead of side bar in mobile.
 
-Investigate other options. 
+**TODO**
+- check per page if current status is sufficient. 
 
 ---
 
