@@ -47,21 +47,25 @@ Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you coul
   
 ---
 
-## 7. Strava import cleanp
+## 7. General cleanup
 
 **Effort:** low
 **Status:** Pending
 
-Cleanup all buttons and settings on pages for strava imports. Maybe keep backend just in case. 
+- Cleanup all strava buttons / strava references / strava settings (as no strava import exists anymore)
+- cleanup all repair / check buttons. Perhaps move them to a debug page, which can be accessed from settings.
+- Hide historical commute generator from side bar. This can be moved to debug page. This is only an initial repair for the database.
+- 
 
 ---
 
-## 8. Hide historical Commute Generator from sidebar
+## 8. Merge NL challenge page with check GPX page. 
 
-**Effort:** Low
-**Status:** Pending
+**Effort:** Medium
+**Status:** open.
 
-Hide from side bar, only access page from setting page (add button?), as this is not in the daily workflow
+- always have a field to drop the GPX.
+- Use the filters per year / all, to go back to normal views. 
 
 ---
 
