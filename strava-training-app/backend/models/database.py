@@ -23,6 +23,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         # Migrate existing tables — add columns if they don't exist yet
         migrations = [
+            "ALTER TABLE ftp_estimates ADD COLUMN estimation_method TEXT DEFAULT 'multi_point'",
             "ALTER TABLE training_goals ADD COLUMN weekly_hours REAL",
             "ALTER TABLE training_goals ADD COLUMN global_plan JSON",
             "ALTER TABLE training_goals ADD COLUMN global_plan_generated_at DATETIME",
@@ -113,6 +114,7 @@ class FTPEstimate(Base):
     p_max = Column(Float)   # maximal sprint power (watts)
     r_squared = Column(Float)  # model fit quality
     data_window_days = Column(Integer, default=60)
+    estimation_method = Column(String, default="multi_point")  # "single_effort" | "multi_point"
 
 
 class TrainingMetrics(Base):

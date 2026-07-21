@@ -318,12 +318,27 @@ export default function Settings() {
                 {ftpData?.cp ? `${Math.round(ftpData.cp)}W` : '—'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                3-param CP model · updated nightly
+                {ftpData?.estimation_method === 'single_effort'
+                  ? "From best recent effort · updated nightly"
+                  : "3-param CP model (multi-point) · updated nightly"}
               </div>
+              {ftpData?.estimation_method && (
+                <div style={{ fontSize: 11, marginTop: 2,
+                  color: ftpData.estimation_method === 'single_effort' ? '#22c55e' : 'var(--muted)' }}>
+                  {ftpData.estimation_method === 'single_effort'
+                    ? '✓ Single-effort method (intervals.icu-style)'
+                    : 'Multi-point fit (no single 3-30min effort available)'}
+                </div>
+              )}
               {ftpData?.r_squared && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   R² = {ftpData.r_squared.toFixed(3)}
                   {ftpData.estimated_at && ` · ${new Date(ftpData.estimated_at).toLocaleDateString()}`}
+                </div>
+              )}
+              {!ftpData?.r_squared && ftpData?.estimated_at && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                  {new Date(ftpData.estimated_at).toLocaleDateString()}
                 </div>
               )}
               {ftpData?.w_prime && (
@@ -375,7 +390,11 @@ export default function Settings() {
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <strong>CP</strong> is automatically estimated from your power data using the 3-parameter critical power model (Morton, 1996). It updates nightly as you ride.<br/>
+            <strong>CP</strong> uses Morton's 3-parameter critical power model (1996). When you have one good
+            maximal effort of 3-30 minutes in the last 60 days, CP is solved directly from that single effort —
+            the same approach intervals.icu uses, and much more reliable if you don't regularly do repeated
+            max-effort tests of varying duration. It falls back to fitting all 3 parameters across multiple
+            durations only when no single qualifying effort is available.<br/>
             <strong>FTP</strong> is your manual input and is used for all TSS calculations, power zones, and workout targets. You stay in control of when it changes — use "Copy CP → FTP" when you agree with the model's estimate.<br/>
             Setting FTP here (or accepting CP) records it as effective from <strong>today</strong>. Historical TSS is calculated using whichever FTP was in effect on each activity's date — <strong>add or backdate FTP entries in the Calendar page</strong> if you know your FTP changed on a specific past date.
           </div>

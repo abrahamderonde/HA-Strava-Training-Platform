@@ -36,11 +36,18 @@ const CustomTooltip = ({ active, payload }) => {
       <div style={{ color: 'var(--muted)', marginBottom: 6 }}>
         {formatDuration(d.duration)}
       </div>
-      <div style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
-        {d.power?.toFixed(0)}W
-      </div>
+      {d.power != null && (
+        <div style={{ color: 'var(--accent2)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
+          {d.power.toFixed(0)}W <span style={{ color: 'var(--muted)', fontWeight: 400 }}>actual</span>
+        </div>
+      )}
+      {d.idealPower != null && (
+        <div style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 500, marginTop: 2 }}>
+          {d.idealPower.toFixed(0)}W <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ideal</span>
+        </div>
+      )}
       {d.wpkg && (
-        <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+        <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 4 }}>
           {d.wpkg} W/kg
         </div>
       )}
@@ -54,19 +61,37 @@ export default function PowerCurve() {
   const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [weight, setWeight] = useState(70)
+  const [showIdeal, setShowIdeal] = useState(true)
 
   useEffect(() => {
     const load = async () => {
       try {
         const curveRes = await fetch('/trainiq/analytics/power-curve')
-        const curveData = curveRes.ok ? await curveRes.json() : []
-        const rawCurve = Array.isArray(curveData) ? curveData : []
-        const enriched = rawCurve.map(d => ({
-          ...d,
-          wpkg: weight > 0 ? (d.power / weight).toFixed(2) : 0,
-          label: formatDuration(d.duration),
-        }))
-        setCurve(enriched)
+        const curveData = curveRes.ok ? await curveRes.json() : {}
+        // Backward-compatible: older API shape was a bare array
+        const actualRaw = Array.isArray(curveData) ? curveData : (curveData.actual || [])
+        const idealRaw = Array.isArray(curveData) ? [] : (curveData.ideal || [])
+
+        // Merge actual + ideal onto a single duration-keyed dataset so Recharts
+        // can plot both lines on the same X axis, even where one series has a
+        // data point and the other doesn't.
+        const byDuration = {}
+        actualRaw.forEach(d => {
+          byDuration[d.duration] = { duration: d.duration, power: d.power }
+        })
+        idealRaw.forEach(d => {
+          if (!byDuration[d.duration]) byDuration[d.duration] = { duration: d.duration }
+          byDuration[d.duration].idealPower = d.power
+        })
+
+        const merged = Object.values(byDuration)
+          .sort((a, b) => a.duration - b.duration)
+          .map(d => ({
+            ...d,
+            wpkg: weight > 0 && d.power ? (d.power / weight).toFixed(2) : null,
+            label: formatDuration(d.duration),
+          }))
+        setCurve(merged)
       } catch (e) { console.error('power-curve fetch:', e) }
 
       try {
@@ -227,7 +252,20 @@ export default function PowerCurve() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-title">Mean Maximal Power (last 60 days)</div>
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Mean Maximal Power (last 60 days)</span>
+            <button
+              onClick={() => setShowIdeal(v => !v)}
+              style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 12, cursor: 'pointer',
+                background: showIdeal ? 'rgba(249,115,22,0.15)' : 'var(--surface2)',
+                border: `1px solid ${showIdeal ? 'var(--accent)' : 'var(--border)'}`,
+                color: showIdeal ? 'var(--accent)' : 'var(--muted)',
+                fontWeight: 600,
+              }}>
+              {showIdeal ? '✓' : ''} Ideal curve
+            </button>
+          </div>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={curve} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -268,8 +306,22 @@ export default function PowerCurve() {
                 strokeWidth={2.5}
                 dot={{ r: 3, fill: 'var(--accent2)', strokeWidth: 0 }}
                 activeDot={{ r: 6 }}
-                name="Power"
+                name="Actual"
+                connectNulls
               />
+              {showIdeal && (
+                <Line
+                  type="monotone"
+                  dataKey="idealPower"
+                  stroke="var(--accent)"
+                  strokeWidth={1.5}
+                  strokeDasharray="5 4"
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  name="Ideal (CP model)"
+                  connectNulls
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
 
@@ -279,6 +331,15 @@ export default function PowerCurve() {
             )}
             {ftp?.r_squared && (
               <span style={{ marginLeft: 16 }}>Model R² = {(ftp.r_squared * 100).toFixed(2)}%</span>
+            )}
+            {showIdeal && (
+              <span style={{ marginLeft: 16 }}>
+                <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '1.5px dashed var(--accent)',
+                  verticalAlign: 'middle', marginRight: 4 }} />
+                Ideal curve shows theoretical power at each duration based on your CP/W'/Pmax model —
+                a gap below it suggests untapped potential at that duration; matching it means you're
+                riding at your physiological ceiling there.
+              </span>
             )}
           </div>
         </div>

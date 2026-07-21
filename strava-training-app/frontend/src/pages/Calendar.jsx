@@ -88,27 +88,46 @@ function MarkPanel({ workout, onDone }) {
   const [tss, setTss] = useState(String(workout.actual_tss || workout.target_tss || ''))
   const [dur, setDur] = useState(String(workout.actual_duration_minutes || workout.target_duration_minutes || ''))
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
 
   const mark = async (completed) => {
     setSaving(true)
-    await fetch(`/trainiq/planning/workouts/${workout.id}/mark`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        completed,
-        actual_tss: completed ? (parseFloat(tss) || null) : null,
-        actual_duration_minutes: completed ? (parseInt(dur) || null) : null,
-      }),
-    })
-    setSaving(false)
-    onDone()
+    setError(null)
+    try {
+      const res = await fetch(`/trainiq/planning/workouts/${workout.id}/mark`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completed,
+          actual_tss: completed ? (parseFloat(tss) || null) : null,
+          actual_duration_minutes: completed ? (parseInt(dur) || null) : null,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`Server returned ${res.status}: ${body.slice(0, 150)}`)
+      }
+      onDone()
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
   }
 
   const unmark = async () => {
     setSaving(true)
-    await fetch(`/trainiq/planning/workouts/${workout.id}/unmark`, { method: 'POST' })
-    setSaving(false)
-    onDone()
+    setError(null)
+    try {
+      const res = await fetch(`/trainiq/planning/workouts/${workout.id}/unmark`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`Server returned ${res.status}: ${body.slice(0, 150)}`)
+      }
+      onDone()
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
   }
 
   return (
@@ -153,6 +172,9 @@ function MarkPanel({ workout, onDone }) {
             <RotateCcw size={10} /> Reset
           </button>
         </div>
+      )}
+      {error && (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#ef4444' }}>{error}</div>
       )}
     </div>
   )

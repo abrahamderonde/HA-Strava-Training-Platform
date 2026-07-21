@@ -276,8 +276,43 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
 
     await db.commit()
 
-    # Fit CP model
-    cp_result = fit_critical_power(merged)
+    # ── CP estimation ────────────────────────────────────────────────────
+    # Primary method: single best maximal effort (180s-30min), following
+    # intervals.icu's approach. This only needs ONE good effort, not several
+    # efforts across a range of durations — much more practical for riders
+    # who don't regularly do repeated all-out tests of varying length.
+    from .services.training_science import estimate_cp_single_effort
+
+    single_effort_durations = [d for d in merged.keys() if 180 <= d <= 1800]
+    cp_result = None
+    if single_effort_durations:
+        # Use the longest available effort in range — closer to steady-state CP,
+        # less influenced by anaerobic contribution than a 3-min max effort would be
+        best_dur = max(single_effort_durations)
+        best_power = merged[best_dur]
+        single_result = estimate_cp_single_effort(float(best_dur), float(best_power))
+        cp_result = {
+            "cp": single_result["cp"],
+            "w_prime": single_result["w_prime"],
+            "p_max": single_result["p_max"],
+            "r_squared": None,  # not applicable to single-point estimation
+            "method": "single_effort",
+        }
+        logger.info(
+            "CP estimated via single-effort method: %.1fW (from %.0fs effort at %.0fW)",
+            single_result["cp"], best_dur, best_power
+        )
+    else:
+        # Fallback: multi-point curve fit, for cases with no single effort in
+        # the 180-1800s range but enough varied-duration data points to fit
+        cp_result = fit_critical_power(merged)
+        if cp_result:
+            cp_result["method"] = "multi_point"
+            logger.info(
+                "CP estimated via multi-point fit (no single 180-1800s effort available): %.1fW",
+                cp_result["cp"]
+            )
+
     if cp_result:
         estimate = FTPEstimate(
             estimated_at=datetime.now(),
@@ -286,12 +321,14 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
             p_max=cp_result["p_max"],
             r_squared=cp_result["r_squared"],
             data_window_days=60,
+            estimation_method=cp_result.get("method", "multi_point"),
         )
         db.add(estimate)
         await db.commit()
         logger.info(
-            "FTP estimated: CP=%.1fW, W'=%.0fJ, R²=%.3f",
-            cp_result["cp"], cp_result["w_prime"], cp_result["r_squared"]
+            "FTP estimated: CP=%.1fW, W'=%.0fJ, method=%s, R²=%s",
+            cp_result["cp"], cp_result["w_prime"], cp_result.get("method", "multi_point"),
+            f"{cp_result['r_squared']:.3f}" if cp_result.get("r_squared") is not None else "n/a"
         )
 
 
@@ -459,9 +496,10 @@ async def garmin_backfill_missing_power(
     background_tasks: BackgroundTasks,
     days: int = 30,
 ):
-    """Re-check recent Garmin-imported activities that have no power data, using
-    the single-activity detail endpoint as a fallback — Garmin's list endpoint
-    sometimes omits avgPower for recently-synced rides even when it exists."""
+    """Re-check recent Garmin-imported activities that have no power data by
+    re-downloading their TCX file — Garmin's activity-list endpoint sometimes
+    omits avgPower for recently-synced rides even when the ride genuinely has
+    power meter data recorded second-by-second."""
     async def _backfill():
         from .models.database import AsyncSessionLocal
         from .services.garmin_import_service import GarminImportService
@@ -494,22 +532,26 @@ async def garmin_backfill_missing_power(
             recovered = 0
             for a in activities:
                 garmin_id = abs(a.strava_id)
-                avg_p = await svc._fetch_power_fallback(client, garmin_id)
-                if avg_p:
-                    a.average_watts = avg_p
-                    power_stream = await svc._fetch_power_stream(client, garmin_id)
-                    np_real = calculate_normalized_power(power_stream) if power_stream else None
-                    np_for_tss = np_real or avg_p
-                    date_ftp = await get_ftp_at_date(db, a.start_date)
-                    if_est = np_for_tss / date_ftp if date_ftp else 0
-                    a.tss = round(min((a.elapsed_time or 0) * np_for_tss * if_est / (date_ftp * 3600) * 100, 500), 1)
-                    a.tss_source = "power" if np_real else "power_avg"
-                    if np_real:
-                        a.np = round(np_real)
-                        a.weighted_avg_watts = round(np_real)
-                        a.power_stream = power_stream
-                    recovered += 1
-                    logger.info("Recovered power for '%s': %.0fW, TSS=%.0f", a.name, avg_p, a.tss)
+                power_stream = await svc._fetch_power_stream(client, garmin_id)
+                if not power_stream:
+                    logger.warning("Still no power data for '%s' (id=%d) after re-check", a.name, a.id)
+                    continue
+
+                avg_p = sum(power_stream) / len(power_stream)
+                np_real = calculate_normalized_power(power_stream)
+                a.average_watts = avg_p
+                np_for_tss = np_real or avg_p
+                date_ftp = await get_ftp_at_date(db, a.start_date)
+                if_est = np_for_tss / date_ftp if date_ftp else 0
+                a.tss = round(min((a.elapsed_time or 0) * np_for_tss * if_est / (date_ftp * 3600) * 100, 500), 1)
+                a.tss_source = "power" if np_real else "power_avg"
+                if np_real:
+                    a.np = round(np_real)
+                    a.weighted_avg_watts = round(np_real)
+                    a.power_stream = power_stream
+                recovered += 1
+                logger.info("Recovered power for '%s': avg=%.0fW NP=%s TSS=%.0f",
+                            a.name, avg_p, f"{np_real:.0f}W" if np_real else "n/a", a.tss)
 
             await db.commit()
             logger.info("Power backfill complete: recovered %d/%d activities", recovered, len(activities))
@@ -1233,11 +1275,38 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
 
 @app.get("/trainiq/analytics/power-curve")
 async def get_power_curve(db: AsyncSession = Depends(get_db)):
+    from .services.training_science import _cp3_model
+    import numpy as np
+
     result = await db.execute(
         select(PowerCurve).order_by(PowerCurve.duration_seconds)
     )
     rows = result.scalars().all()
-    return [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
+    actual = [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
+
+    # Fetch latest CP model fit to generate the "ideal" theoretical curve
+    ftp_result = await db.execute(
+        select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
+    )
+    ftp_est = ftp_result.scalar_one_or_none()
+
+    ideal = []
+    if ftp_est and ftp_est.cp and ftp_est.w_prime and ftp_est.p_max:
+        # Standard duration checkpoints riders care about: 5s to 60min
+        durations = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300,
+                     420, 600, 900, 1200, 1800, 2400, 3600]
+        t = np.array(durations, dtype=float)
+        p_ideal = _cp3_model(t, ftp_est.cp, ftp_est.w_prime, ftp_est.p_max)
+        ideal = [{"duration": d, "power": round(float(p), 1)} for d, p in zip(durations, p_ideal)]
+
+    return {
+        "actual": actual,
+        "ideal": ideal,
+        "cp": ftp_est.cp if ftp_est else None,
+        "w_prime": ftp_est.w_prime if ftp_est else None,
+        "p_max": ftp_est.p_max if ftp_est else None,
+        "r_squared": ftp_est.r_squared if ftp_est else None,
+    }
 
 
 @app.get("/trainiq/debug/garmin-tokens")
@@ -1460,7 +1529,80 @@ async def get_distance_by_year(
 
 
 
-@app.get("/trainiq/analytics/ftp")
+@app.get("/trainiq/debug/cp-fit-detail")
+async def cp_fit_detail(db: AsyncSession = Depends(get_db)):
+    """Debug: show exactly which power-curve datapoints go into the CP model fit,
+    plus which activities contributed power_stream data — useful for comparing
+    against intervals.icu or other tools that may use a different data window
+    or fitting method and therefore arrive at a different CP value."""
+    from .services.training_science import fit_critical_power
+
+    cutoff = datetime.now() - timedelta(days=60)
+
+    # Activities that DO have usable power_stream data in the fit window
+    with_stream = await db.execute(
+        select(Activity)
+        .where(Activity.has_power == True)
+        .where(Activity.start_date >= cutoff)
+        .where(Activity.power_stream.isnot(None))
+        .order_by(Activity.start_date.desc())
+    )
+    with_stream_acts = with_stream.scalars().all()
+
+    # Activities that have power (avg_watts) but NO stream — these are silently
+    # excluded from the CP fit even though they have power data, which can
+    # explain a lower/different CP than tools using average-power-only methods
+    without_stream = await db.execute(
+        select(Activity)
+        .where(Activity.has_power == True)
+        .where(Activity.start_date >= cutoff)
+        .where(Activity.power_stream.is_(None))
+        .order_by(Activity.start_date.desc())
+    )
+    without_stream_acts = without_stream.scalars().all()
+
+    # Current power curve datapoints actually used for the fit
+    pc_result = await db.execute(select(PowerCurve).order_by(PowerCurve.duration_seconds))
+    pc_rows = pc_result.scalars().all()
+    power_curve = {r.duration_seconds: r.best_power for r in pc_rows}
+
+    fit_points = [
+        {"duration_s": d, "power_w": p}
+        for d, p in sorted(power_curve.items())
+        if 120 <= d <= 1200  # matches fit_critical_power's min/max_duration
+    ]
+
+    fit_result = fit_critical_power(power_curve)
+
+    return {
+        "fit_window_days": 60,
+        "fit_duration_range_seconds": [120, 1200],
+        "datapoints_used_in_fit": fit_points,
+        "fit_result": fit_result,
+        "activities_with_power_stream": [
+            {"id": a.id, "name": a.name, "date": a.start_date.date().isoformat(),
+             "elapsed_min": (a.elapsed_time or 0) // 60}
+            for a in with_stream_acts
+        ],
+        "activities_missing_power_stream": [
+            {"id": a.id, "name": a.name, "date": a.start_date.date().isoformat(),
+             "average_watts": a.average_watts,
+             "note": "Has avg power but no stored stream — excluded from CP fit"}
+            for a in without_stream_acts
+        ],
+        "explanation": (
+            "This app fits CP using only activities with a stored power_stream "
+            "(from TCX), restricted to 2-20 minute efforts, over the last 60 days. "
+            "It also caps CP at 105% of your best 20-min power if the raw fit exceeds "
+            "110% of that value. Tools like intervals.icu may use a different date "
+            "window, a different duration range, no such cap, and/or a different "
+            "underlying model (e.g. Monod-Scherrer vs this 3-parameter Morton model) "
+            "— all of which can produce a different CP from the same underlying rides."
+        ),
+    }
+
+
+
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
@@ -1481,6 +1623,7 @@ async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
         "r_squared": estimate.r_squared,
         "estimated_at": estimate.estimated_at.isoformat(),
         "source": "cp3_model",
+        "estimation_method": getattr(estimate, "estimation_method", "multi_point"),
     }
 
 

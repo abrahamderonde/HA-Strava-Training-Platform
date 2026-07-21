@@ -269,6 +269,57 @@ def _cp3_model(t: np.ndarray, cp: float, w_prime: float, p_max: float) -> np.nda
     return cp + w_prime / t + (p_max - cp) * np.exp(-t / tau)
 
 
+def estimate_cp_single_effort(
+    duration_seconds: float,
+    power_watts: float,
+    w_prime: float = 20000.0,
+    p_max: float = None,
+) -> Dict:
+    """
+    Estimate CP from a single maximal effort using Morton's 3-parameter model,
+    following intervals.icu's approach: rather than fitting all 3 parameters to
+    a multi-point power curve (which requires several recent maximal efforts of
+    varying duration), fix W' and Pmax at reasonable defaults and solve for CP
+    algebraically from one known (duration, power) pair.
+
+    This only requires ONE maximal effort between 180s (3min) and 1800s (30min),
+    matching intervals.icu's stated requirement — much more practical for riders
+    who rarely do repeated all-out efforts across different durations.
+
+    P(t) = W'/t + CP + (Pmax - CP) * e^(-t/tau)
+
+    For efforts of 3-30 min, the exponential term is negligible (tau=30s means
+    e^(-t/30) is essentially 0 beyond ~3min), so this simplifies to:
+    P(t) ≈ W'/t + CP  =>  CP ≈ P(t) - W'/t
+    """
+    if duration_seconds < 180 or duration_seconds > 1800:
+        logger.warning(
+            "Single-effort CP estimation works best for 180-1800s efforts; "
+            "got %.0fs — result may be less reliable", duration_seconds
+        )
+
+    tau = 30.0
+    if p_max is None:
+        # Without a known Pmax, the exponential term is ~0 for efforts >=3min anyway
+        p_max = power_watts * 1.5  # rough anaerobic ceiling, only matters for short end
+
+    exp_term = (p_max - (power_watts)) * np.exp(-duration_seconds / tau)
+    # Solve: power = w_prime/t + cp + (p_max - cp)*e^(-t/tau)
+    # Rearranged for cp:
+    decay = np.exp(-duration_seconds / tau)
+    cp = (power_watts - w_prime / duration_seconds - p_max * decay) / (1 - decay) if decay < 0.999 else \
+         power_watts - w_prime / duration_seconds
+
+    return {
+        "cp": round(float(cp), 1),
+        "w_prime": w_prime,
+        "p_max": p_max,
+        "method": "single_effort",
+        "source_duration_s": duration_seconds,
+        "source_power_w": power_watts,
+    }
+
+
 def fit_critical_power(
     power_curve: Dict[int, float],
     min_duration: int = 120,    # start at 2 min — short sprints distort CP

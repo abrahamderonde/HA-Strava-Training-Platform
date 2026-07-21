@@ -5,7 +5,6 @@ import Calendar from './pages/Calendar'
 import PowerCurve from './pages/PowerCurve'
 import Planning from './pages/Planning'
 import Gemeenten from './pages/Gemeenten'
-import GpxChecker from './pages/GpxChecker'
 import Eddington from './pages/Eddington'
 import Settings from './pages/Settings'
 import CommuteGenerator from './pages/CommuteGenerator'
@@ -13,7 +12,7 @@ import Stats from './pages/Stats'
 import {
   LayoutDashboard, Calendar as CalIcon, TrendingUp,
   Zap, Target, Settings as SettingsIcon, Activity,
-  Map, FileSearch, Award, Bike, BarChart2, Menu, X
+  Map, Award, Bike, BarChart2, Menu, X
 } from 'lucide-react'
 import './index.css'
 
@@ -28,7 +27,6 @@ const PRIMARY_NAV = [
 const NAV = [
   ...PRIMARY_NAV,
   { to: '/gemeenten',    icon: Map,              label: 'NL Challenge'  },
-  { to: '/gpx-checker',  icon: FileSearch,       label: 'GPX Check'  },
   { to: '/eddington',    icon: Award,            label: 'Eddington'  },
   { to: '/stats',        icon: BarChart2,        label: 'Stats'      },
   { to: '/commutes',     icon: Bike,             label: 'Commutes'   },
@@ -185,7 +183,6 @@ export default function App() {
             <Route path="/power-curve"  element={<PowerCurve />} />
             <Route path="/planning"     element={<Planning />} />
             <Route path="/gemeenten"    element={<Gemeenten />} />
-            <Route path="/gpx-checker"  element={<GpxChecker />} />
             <Route path="/eddington"    element={<Eddington />} />
             <Route path="/stats"       element={<Stats />} />
             <Route path="/commutes"     element={<CommuteGenerator />} />
