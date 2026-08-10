@@ -338,7 +338,8 @@ export default function PowerCurve() {
                   verticalAlign: 'middle', marginRight: 4 }} />
                 Ideal curve shows theoretical power at each duration based on your CP/W'/Pmax model —
                 a gap below it suggests untapped potential at that duration; matching it means you're
-                riding at your physiological ceiling there.
+                riding at your physiological ceiling there. Not shown for the shortest sprint durations,
+                where this model isn't reliable without a real short-effort test.
               </span>
             )}
           </div>

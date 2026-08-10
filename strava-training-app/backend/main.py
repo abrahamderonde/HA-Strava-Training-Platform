@@ -656,23 +656,22 @@ async def garmin_recalculate_tss(background_tasks: BackgroundTasks):
 
 
 @app.post("/trainiq/garmin/import-recent")
-async def garmin_import_recent(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
+async def garmin_import_recent(background_tasks: BackgroundTasks):
     """Import activities from the last 14 days from Garmin Connect."""
     async def _import():
-        ftp = await get_current_ftp(db)
-        svc = GarminImportService(
-            CONFIG.get("garmin_email", ""),
-            CONFIG.get("garmin_password", ""),
-            db,
-            ftp=ftp,
-        )
-        result = await svc.import_recent(days=14)
-        logger.info("Garmin recent import: %s", result)
-        if result.get("imported", 0) > 0:
-            await recalculate_pmc(db)
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            result = await svc.import_recent(days=14)
+            logger.info("Garmin recent import: %s", result)
+            if result.get("imported", 0) > 0:
+                await recalculate_pmc(db)
     background_tasks.add_task(_import)
     return {"status": "Import started", "note": "Check logs for progress"}
 
@@ -681,21 +680,22 @@ async def garmin_import_recent(
 async def garmin_import_history(
     background_tasks: BackgroundTasks,
     days: int = 365,
-    db: AsyncSession = Depends(get_db),
 ):
     """Import full activity history from Garmin Connect."""
     async def _import():
-        ftp = await get_current_ftp(db)
-        svc = GarminImportService(
-            CONFIG.get("garmin_email", ""),
-            CONFIG.get("garmin_password", ""),
-            db,
-            ftp=ftp,
-        )
-        result = await svc.import_history(days=days)
-        logger.info("Garmin history import: %s", result)
-        if result.get("imported", 0) > 0:
-            await recalculate_pmc(db)
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            result = await svc.import_history(days=days)
+            logger.info("Garmin history import: %s", result)
+            if result.get("imported", 0) > 0:
+                await recalculate_pmc(db)
     background_tasks.add_task(_import)
     return {"status": f"History import started for last {days} days"}
 
@@ -718,7 +718,6 @@ async def webhook_verify(
 async def webhook_event(
     request: Request,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
 ):
     """Handle incoming Strava webhook events (new/updated activities)."""
     data = await request.json()
@@ -726,9 +725,17 @@ async def webhook_event(
 
     if data.get("object_type") == "activity" and data.get("aspect_type") == "create":
         activity_id = data.get("object_id")
-        background_tasks.add_task(import_single_activity, activity_id, db)
+        background_tasks.add_task(_import_single_activity_task, activity_id)
 
     return {"status": "ok"}
+
+
+async def _import_single_activity_task(activity_id: int):
+    """Background task wrapper: opens its own DB session (the request-scoped
+    session is closed by the time this runs) then delegates to the import logic."""
+    from .models.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await import_single_activity(activity_id, db)
 
 
 async def import_single_activity(activity_id: int, db: AsyncSession):
@@ -1193,13 +1200,16 @@ async def backfill_latlng(background_tasks: BackgroundTasks):
 
 
 @app.post("/trainiq/strava/import")
-async def trigger_import(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
+async def trigger_import(background_tasks: BackgroundTasks):
     """Trigger a full history import in the background."""
-    background_tasks.add_task(run_full_import, db)
+    background_tasks.add_task(_run_full_import_task)
     return {"status": "Import started"}
+
+
+async def _run_full_import_task():
+    from .models.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await run_full_import(db)
 
 
 async def run_full_import(db: AsyncSession):
@@ -1292,11 +1302,30 @@ async def get_power_curve(db: AsyncSession = Depends(get_db)):
 
     ideal = []
     if ftp_est and ftp_est.cp and ftp_est.w_prime and ftp_est.p_max:
-        # Standard duration checkpoints riders care about: 5s to 60min
-        durations = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300,
-                     420, 600, 900, 1200, 1800, 2400, 3600]
+        method = getattr(ftp_est, "estimation_method", "multi_point")
+
+        # The W'/t term in the CP3 model blows up at very short durations —
+        # it's only meant to model the 1-20min "anaerobic reserve above CP"
+        # region, not true sprint power. This is especially true when W'/Pmax
+        # came from the single-effort method (fixed defaults, not fitted to
+        # actual short-duration data). Restrict the curve to the range the
+        # model is actually valid for for that estimation method.
+        if method == "single_effort":
+            # Single-effort params are only meaningful in roughly the range
+            # the source effort came from — don't extrapolate to sprints
+            durations = [60, 90, 120, 180, 240, 300, 420, 600, 900, 1200, 1800]
+        else:
+            durations = [15, 20, 30, 45, 60, 90, 120, 180, 240, 300,
+                         420, 600, 900, 1200, 1800, 2400, 3600]
+
         t = np.array(durations, dtype=float)
         p_ideal = _cp3_model(t, ftp_est.cp, ftp_est.w_prime, ftp_est.p_max)
+
+        # Hard physiological ceiling regardless of model output — even elite
+        # track sprinters rarely exceed ~2500W peak; this is a safety net for
+        # any parameter combination that produces an unrealistic extrapolation
+        p_ideal = np.minimum(p_ideal, 2000.0)
+
         ideal = [{"duration": d, "power": round(float(p), 1)} for d, p in zip(durations, p_ideal)]
 
     return {
@@ -2572,15 +2601,15 @@ async def schedule_ftp_test(request: Request, db: AsyncSession = Depends(get_db)
         target_duration_minutes=total_s // 60,
         target_if=1.05,
         intervals=intervals,
-        indoor=data.get("indoor", True),
     )
     db.add(workout)
     await db.commit()
     await db.refresh(workout)
 
-    # Auto-export to Garmin if tomorrow or today
-    today = datetime.now().date()
-    if workout_date.date() <= today + timedelta(days=1):
+    # Auto-export to Garmin regardless of how far in the future the date is —
+    # scheduling via the weekly planner often sets dates several days out.
+    # Wrapped so a Garmin failure doesn't hide the fact the workout WAS saved.
+    try:
         garmin = GarminService(
             CONFIG.get("garmin_email", ""),
             CONFIG.get("garmin_password", ""),
@@ -2591,6 +2620,10 @@ async def schedule_ftp_test(request: Request, db: AsyncSession = Depends(get_db)
             workout.garmin_schedule_id = result.get("garmin_schedule_id")
             workout.exported_to_garmin = True
             await db.commit()
+        else:
+            logger.warning("FTP test saved (id=%d) but Garmin export returned no workout ID", workout.id)
+    except Exception as e:
+        logger.error("FTP test saved (id=%d) but Garmin export raised an exception: %s", workout.id, e)
 
     return {
         "status": "ok",
@@ -2808,10 +2841,7 @@ async def get_visited_gemeenten(db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/trainiq/gemeenten/scan-all")
-async def scan_all_activities_for_gemeenten(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-):
+async def scan_all_activities_for_gemeenten(background_tasks: BackgroundTasks):
     """Re-scan all cycling activities with GPS to detect visited gemeenten."""
     background_tasks.add_task(_scan_all_gemeenten)
     return {"status": "Scanning started in background"}
