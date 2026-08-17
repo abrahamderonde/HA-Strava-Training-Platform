@@ -213,14 +213,25 @@ export default function Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ftp: val }),
       })
-      if (!res.ok) throw new Error('Save failed')
-      // Refresh ftp data and reseed input
-      const fresh = await fetch('/trainiq/analytics/ftp').then(r => r.json())
-      setFtpData(fresh)
-      setFtpInput(String(Math.round(fresh.ftp)))
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`Save failed: ${res.status} ${body.slice(0, 150)}`)
+      }
       setFtpMsg('FTP saved ✓')
       setTimeout(() => setFtpMsg(null), 3000)
-    } catch { setFtpMsg('Save failed') }
+
+      // Refresh display data — failure here doesn't mean the save failed,
+      // just that we couldn't immediately re-fetch to confirm
+      try {
+        const fresh = await fetch('/trainiq/analytics/ftp').then(r => r.json())
+        setFtpData(fresh)
+        setFtpInput(String(Math.round(fresh.ftp)))
+      } catch (e) {
+        console.warn('FTP saved but refresh failed:', e)
+      }
+    } catch (e) {
+      setFtpMsg(e.message)
+    }
     setFtpSaving(false)
   }
 
