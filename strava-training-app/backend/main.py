@@ -1632,6 +1632,7 @@ async def cp_fit_detail(db: AsyncSession = Depends(get_db)):
 
 
 
+@app.get("/trainiq/analytics/ftp")
 async def get_ftp_estimate(db: AsyncSession = Depends(get_db)):
     cp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
