@@ -334,9 +334,9 @@ export default function Gemeenten() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 16, minHeight: 520 }}>
-        <div style={{ borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)', minHeight: 520, position: 'relative' }}>
-          <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 520 }} />
+      <div className="gemeenten-layout">
+        <div className="gemeenten-map-wrap">
+          <div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 320 }} />
           {!mapReady && (
             <div style={{ position: 'absolute', inset: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
               Loading map…
@@ -344,7 +344,7 @@ export default function Gemeenten() {
           )}
         </div>
 
-        <div className="card" style={{ overflowY: 'auto', maxHeight: 520, padding: '14px 16px' }}>
+        <div className="card gemeenten-sidebar" style={{ padding: '14px 16px' }}>
           {gpxResult ? (
             <>
               <div className="card-title" style={{ marginBottom: 10, color: '#22c55e' }}>
