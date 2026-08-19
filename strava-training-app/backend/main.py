@@ -286,11 +286,22 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
     single_effort_durations = [d for d in merged.keys() if 180 <= d <= 1800]
     cp_result = None
     if single_effort_durations:
-        # Use the longest available effort in range — closer to steady-state CP,
-        # less influenced by anaerobic contribution than a 3-min max effort would be
-        best_dur = max(single_effort_durations)
-        best_power = merged[best_dur]
-        single_result = estimate_cp_single_effort(float(best_dur), float(best_power))
+        # Try every candidate duration in range and keep whichever yields the
+        # HIGHEST estimated CP. Picking by "longest duration" was a bug — a
+        # genuine hard 20-min effort should win over a lower-power 30-min
+        # tempo/endurance segment that happens to be longer in the merged
+        # curve. A real maximal effort produces the highest, most reliable
+        # CP estimate, and the single-effort formula is fairly stable across
+        # the 3-30min range for a true max effort, so "best CP wins" reliably
+        # picks the actual test rather than an incidental longer-duration ride.
+        candidates = []
+        for dur in single_effort_durations:
+            power = merged[dur]
+            result = estimate_cp_single_effort(float(dur), float(power))
+            candidates.append((result["cp"], dur, power, result))
+
+        best_cp, best_dur, best_power, single_result = max(candidates, key=lambda c: c[0])
+
         cp_result = {
             "cp": single_result["cp"],
             "w_prime": single_result["w_prime"],
@@ -299,8 +310,10 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
             "method": "single_effort",
         }
         logger.info(
-            "CP estimated via single-effort method: %.1fW (from %.0fs effort at %.0fW)",
-            single_result["cp"], best_dur, best_power
+            "CP estimated via single-effort method: %.1fW (from %.0fs effort at %.0fW, "
+            "chosen from %d candidates: %s)",
+            single_result["cp"], best_dur, best_power, len(candidates),
+            {int(d): round(p) for _, d, p, _ in candidates}
         )
     else:
         # Fallback: multi-point curve fit, for cases with no single effort in
