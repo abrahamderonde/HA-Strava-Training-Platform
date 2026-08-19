@@ -62,7 +62,7 @@ Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you coul
 ## 8. Merge NL challenge page with check GPX page. 
 
 **Effort:** Medium
-**Status:** open.
+**Status:** finished. 
 
 - always have a field to drop the GPX.
 - Use the filters per year / all, to go back to normal views. 
