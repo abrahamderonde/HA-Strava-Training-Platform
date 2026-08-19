@@ -575,3 +575,42 @@ body {
     width: 340px;
   }
 }
+
+/* ── Gemeenten / NL Challenge layout ── */
+.gemeenten-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gemeenten-map-wrap {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  min-height: 320px;
+  height: 60vh;
+  position: relative;
+}
+
+.gemeenten-sidebar {
+  overflow-y: auto;
+  max-height: 420px;
+}
+
+@media (min-width: 768px) {
+  .gemeenten-layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    min-height: 520px;
+    gap: 16px;
+  }
+
+  .gemeenten-map-wrap {
+    height: auto;
+    min-height: 520px;
+  }
+
+  .gemeenten-sidebar {
+    max-height: 520px;
+  }
+}
