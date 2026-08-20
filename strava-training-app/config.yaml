@@ -18,8 +18,6 @@ map:
   - config:rw
   - share:rw
 options:
-  strava_client_id: ""
-  strava_client_secret: ""
   garmin_email: ""
   garmin_password: ""
   anthropic_api_key: ""
@@ -28,8 +26,6 @@ options:
   athlete_weight_kg: 70
   ftp_initial: 200
 schema:
-  strava_client_id: str
-  strava_client_secret: str
   garmin_email: str
   garmin_password: str
   anthropic_api_key: str
