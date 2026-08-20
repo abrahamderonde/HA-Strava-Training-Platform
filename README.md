@@ -1,4 +1,4 @@
-# TrainIQ — Strava Training Platform
+# TrainIQ — Cycling Training Platform
 
 > A self-hosted cycling training platform for Home Assistant.  
 > Inspired by intervals.icu, Join.cc and wielervrienden.nl — fully under your own control.
@@ -10,15 +10,17 @@ See full ReadMe at
 ### [Strava Training Platform](./strava-training-app)
 
 ## Features
+⌚ Garmin Connect sync
+
 📊 Training Analytics
 
-📅 Activity Management
+🤖 AI Workout generation
+
+📅 Activity Management & Calendar
 
 🗺️ Long term NL challenge (idea of Frank van Moorsel)
 
 📈 Eddington number
-
-🤖 AI Workout generation
 
 
 ---
