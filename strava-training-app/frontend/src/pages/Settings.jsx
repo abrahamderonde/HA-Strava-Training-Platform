@@ -182,11 +182,7 @@ function DuplicateFinderCard() {
 }
 
 export default function Settings() {
-  const [status, setStatus] = useState(null)
   const [config, setConfig] = useState(null)
-  const [haUrl, setHaUrl] = useState(() => localStorage.getItem('ha_url') || '')
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(false)
   const [ftpData, setFtpData] = useState(null)
   const [goalData, setGoalData] = useState(null)
   const [ftpInput, setFtpInput] = useState('')
@@ -194,7 +190,6 @@ export default function Settings() {
   const [ftpMsg, setFtpMsg] = useState(null)
 
   useEffect(() => {
-    fetch('/trainiq/strava/status').then(r => r.json()).then(setStatus).catch(() => {})
     fetch('/trainiq/settings').then(r => r.json()).then(setConfig).catch(() => {})
     fetch('/trainiq/analytics/ftp').then(r => r.json()).then(d => {
       setFtpData(d)
@@ -244,22 +239,6 @@ export default function Settings() {
     setTimeout(() => setFtpMsg(null), 3000)
   }
 
-  const connectStrava = async () => {
-    setError(null)
-    setLoading(true)
-    try {
-      const callbackUrl = haUrl.trim() || window.location.origin
-      const res = await fetch(`/trainiq/strava/auth-url?ha_url=${encodeURIComponent(callbackUrl)}`)
-      const data = await res.json()
-      if (data.url) window.location.href = data.url
-      else setError('No URL returned. Check Strava Client ID and Secret.')
-    } catch (e) {
-      setError(`Error: ${e.message}`)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div>
       <div className="page-header">
@@ -274,21 +253,6 @@ export default function Settings() {
           <GarminImportCard />
         </div>
 
-        {/* Strava Connection */}
-        <div className="card">
-          <div className="card-title" style={{ color: 'var(--muted)' }}>Strava Connection <span style={{ fontSize: 11, fontWeight: 400 }}>(deprecated — Strava API now requires paid access)</span></div>
-
-          {status?.authenticated ? (
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              Previously connected as <strong>{status.athlete_name}</strong>. Historical data already imported is retained.
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              Strava API access now requires a paid subscription. Use Garmin Import above instead.
-            </div>
-          )}
-        </div>
-
         {/* Current Config Values */}
         <div className="card">
           <div className="card-title">Current Configuration</div>
@@ -297,11 +261,9 @@ export default function Settings() {
               {[
                 ['Athlete weight', `${config.athlete_weight_kg} kg`],
                 ['Initial FTP', `${config.ftp_initial} W`],
-                ['Strava', config.strava_configured ? '✓ Configured' : '✗ Not configured', config.strava_configured ? 'var(--accent2)' : 'var(--accent)'],
                 ['Garmin', config.garmin_configured ? '✓ Configured' : '— Not configured', config.garmin_configured ? 'var(--accent2)' : 'var(--muted)'],
                 ['AI Planning', config.anthropic_configured ? '✓ Configured' : '— Not configured', config.anthropic_configured ? 'var(--accent2)' : 'var(--muted)'],
-              ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
-              ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
+                ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
               ].map(([label, value, color], i, arr) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 6, marginBottom: 6 }}>
                   <span style={{ color: 'var(--muted)' }}>{label}</span>
@@ -442,33 +404,6 @@ export default function Settings() {
 
       <DuplicateFinderCard />
 
-      {/* Backfill GPS */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
-          <p>Re-fetches GPS tracks for older cycling activities that were imported without location data. Required for complete Gemeente detection.</p>
-          <p style={{ marginTop: 8 }}>This may take a while for large histories — progress shows in the app log.</p>
-        </div>
-        <button className="btn btn-ghost btn-sm" onClick={async () => {
-          await fetch('/trainiq/strava/backfill-latlng', { method: 'POST' })
-          alert('Backfill started — check the app log for progress. Run Re-scan on the Gemeenten page when complete.')
-        }}>
-          Backfill GPS Tracks
-        </button>
-      </div>
-
-      {/* Strava Setup */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-title">Strava API Setup Instructions</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.8 }}>
-          <ol style={{ paddingLeft: 18 }}>
-            <li>Go to <a href="https://www.strava.com/settings/api" target="_blank" rel="noopener" style={{ color: 'var(--accent2)' }}>strava.com/settings/api</a></li>
-            <li>Set <strong>Authorization Callback Domain</strong> to your HA hostname only, e.g. <code style={{ background: 'var(--surface2)', padding: '2px 6px', borderRadius: 4 }}>homeassistant.local</code></li>
-            <li>Copy <strong>Client ID</strong> and <strong>Client Secret</strong> into the HA app Configuration tab</li>
-            <li>Restart the app</li>
-            <li>Enter your full HA URL above (with https://) and click <strong>Connect Strava</strong></li>
-          </ol>
-        </div>
-      </div>
     </div>
   )
 }
