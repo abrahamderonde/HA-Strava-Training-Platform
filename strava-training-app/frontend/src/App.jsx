@@ -37,16 +37,8 @@ const NAV = [
 const MORE_NAV = NAV.filter(item => !PRIMARY_NAV.some(p => p.to === item.to))
 
 export default function App() {
-  const [stravaConnected, setStravaConnected] = useState(false)
   const [cpNotif, setCpNotif] = useState(null) // {new_cp, user_ftp, difference}
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-
-  useEffect(() => {
-    fetch('/trainiq/strava/status')
-      .then(r => r.json())
-      .then(d => setStravaConnected(d.authenticated))
-      .catch(() => {})
-  }, [])
 
   useEffect(() => {
     fetch('/trainiq/analytics/cp-changed')
@@ -116,13 +108,6 @@ export default function App() {
               </li>
             ))}
           </ul>
-
-          {stravaConnected && (
-            <div className="sidebar-status">
-              <span className="status-dot" />
-              Strava connected
-            </div>
-          )}
         </nav>
 
         {/* Mobile bottom navigation — 4 primary items + More */}
