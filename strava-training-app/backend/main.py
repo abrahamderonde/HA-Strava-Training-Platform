@@ -21,8 +21,9 @@ from fastapi import UploadFile, File
 from .models.database import (
     init_db, get_db, Activity, TrainingMetrics, PowerCurve,
     FTPEstimate, PlannedWorkout, TrainingGoal, StravaToken,
-    VisitedGemeente,
+    VisitedGemeente, WorkoutLibrary,
 )
+from .services.garmin_workout_library_service import GarminWorkoutLibraryService
 from .services.strava_service import StravaService
 from .services.garmin_service import GarminService
 from .services.garmin_import_service import GarminImportService
@@ -82,6 +83,12 @@ async def lifespan(app: FastAPI):
         nightly_garmin_workout_export,
         "cron", hour=23, minute=45,
         id="nightly_garmin_workout_export"
+    )
+    # Schedule nightly workout library sync (3am — after PMC/activity jobs)
+    scheduler.add_job(
+        nightly_workout_library_sync,
+        "cron", hour=3, minute=0,
+        id="nightly_workout_library_sync"
     )
     scheduler.start()
     logger.info("Strava Training Platform started")
@@ -183,6 +190,107 @@ async def nightly_garmin_sync():
         except Exception as e:
             logger.error("Nightly Garmin sync failed: %s", e)
 
+async def nightly_workout_library_sync():
+    from .models.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        try:
+            ftp = await get_current_ftp(db)
+            svc = GarminWorkoutLibraryService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            result = await svc.sync_library()
+            logger.info("Nightly workout library sync: %s", result)
+        except Exception as e:
+            logger.error("Nightly workout library sync failed: %s", e)
+
+
+@app.post("/trainiq/garmin/import-workout-library")
+async def garmin_import_workout_library(background_tasks: BackgroundTasks):
+    async def _import():
+        from .models.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminWorkoutLibraryService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            result = await svc.sync_library()
+            logger.info("Manual workout library sync: %s", result)
+    background_tasks.add_task(_import)
+    return {"status": "Workout library sync started — check logs for progress"}
+
+
+@app.get("/trainiq/workout-library")
+async def list_workout_library(
+    source: str = None,
+    workout_type: str = None,
+    q: str = None,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(WorkoutLibrary).order_by(WorkoutLibrary.name)
+    if source:
+        query = query.where(WorkoutLibrary.source == source)
+    if workout_type:
+        query = query.where(WorkoutLibrary.workout_type == workout_type)
+    if q:
+        query = query.where(WorkoutLibrary.name.ilike(f"%{q}%"))
+    result = await db.execute(query)
+    return [
+        {
+            "id": w.id,
+            "garmin_workout_id": w.garmin_workout_id,
+            "name": w.name,
+            "source": w.source,
+            "workout_type": w.workout_type,
+            "rating": w.rating,
+            "estimated_duration_s": w.estimated_duration_s,
+            "intervals": w.intervals,
+            "times_used": w.times_used,
+            "imported_at": w.imported_at.isoformat() if w.imported_at else None,
+            "last_synced_at": w.last_synced_at.isoformat() if w.last_synced_at else None,
+        }
+        for w in result.scalars().all()
+    ]
+
+
+@app.patch("/trainiq/workout-library/{entry_id}")
+async def update_workout_library_entry(entry_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    data = await request.json()
+    result = await db.execute(select(WorkoutLibrary).where(WorkoutLibrary.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    if "source" in data:
+        entry.source = data["source"]
+        entry.source_manual = True
+    if "workout_type" in data:
+        entry.workout_type = data["workout_type"]
+        entry.workout_type_manual = True
+    if "rating" in data:
+        rating = data["rating"]
+        if rating is not None and not (1 <= int(rating) <= 5):
+            raise HTTPException(status_code=400, detail="rating must be between 1 and 5")
+        entry.rating = rating
+
+    await db.commit()
+    return {"status": "ok", "id": entry.id}
+
+
+@app.delete("/trainiq/workout-library/{entry_id}")
+async def delete_workout_library_entry(entry_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(WorkoutLibrary).where(WorkoutLibrary.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    await db.delete(entry)
+    await db.commit()
+    return {"status": "deleted"}
 
 async def recalculate_pmc(db: AsyncSession):
     """Recalculate PMC (CTL/ATL/TSB) from all activities."""
@@ -1378,48 +1486,6 @@ async def debug_garmin_tokens():
         "path": str(token_path),
         "files": file_info,
     }
-
-@app.get("/trainiq/debug/garmin-lib-check")
-async def debug_garmin_lib_check():
-    """Eenmalige check: python-versie + garminconnect-versie + workout-library methodes."""
-    import sys
-    import inspect
-    import importlib.metadata
-
-    result = {
-        "python_version": sys.version,
-        "garminconnect_version": None,
-        "methods_present": {},
-        "signatures": {},
-        "error": None,
-    }
-
-    try:
-        result["garminconnect_version"] = importlib.metadata.version("garminconnect")
-    except Exception as e:
-        result["error"] = f"version lookup failed: {e}"
-
-    try:
-        from garminconnect import Garmin
-
-        for method_name in [
-            "get_workouts", "get_workout_by_id", "download_workout",
-            "upload_workout", "schedule_workout", "login",
-        ]:
-            result["methods_present"][method_name] = hasattr(Garmin, method_name)
-
-        for method_name in ["get_workouts", "get_workout_by_id"]:
-            if hasattr(Garmin, method_name):
-                try:
-                    result["signatures"][method_name] = str(
-                        inspect.signature(getattr(Garmin, method_name))
-                    )
-                except Exception as e:
-                    result["signatures"][method_name] = f"signature failed: {e}"
-    except Exception as e:
-        result["error"] = f"garminconnect import failed: {e}"
-
-    return result
 
 @app.get("/trainiq/debug/power-stats")
 async def power_stats(db: AsyncSession = Depends(get_db)):

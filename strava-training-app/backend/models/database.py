@@ -242,6 +242,26 @@ class WeightHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class WorkoutLibrary(Base):
+    __tablename__ = "workout_library"
+
+    id = Column(Integer, primary_key=True)
+    garmin_workout_id = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String)
+    source = Column(String, default="overig")          # "join" | "trainiq" | "overig"
+    source_manual = Column(Boolean, default=False)
+    workout_type = Column(String, nullable=True)        # endurance/threshold/vo2max/recovery/race/unclassified
+    workout_type_manual = Column(Boolean, default=False)
+    rating = Column(Integer, nullable=True)             # 1-5
+    sport_type = Column(String, default="cycling")
+    estimated_duration_s = Column(Integer, nullable=True)
+    intervals = Column(JSON, nullable=True)
+    raw_garmin_json = Column(JSON, nullable=True)
+    imported_at = Column(DateTime, default=datetime.utcnow)
+    last_synced_at = Column(DateTime, nullable=True)
+    times_used = Column(Integer, default=0)
+
+
 # Keep old names as aliases for any legacy references
 MunicipalityBoundary = GemeenteBoundary
 VisitedMunicipality = VisitedGemeente
