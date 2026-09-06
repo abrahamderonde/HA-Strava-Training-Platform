@@ -271,12 +271,13 @@ class GarminImportService:
             return None  # Already imported
 
         # Fetch power stream (TCX-based, reliable) and compute real Normalized Power.
-        # Always attempt for non-trainer activities, even if the summary-list response
-        # didn't include average_watts — Garmin's list endpoint sometimes omits power
-        # for recently-synced activities even when the ride genuinely has power data.
+        # Attempted for ALL activities, including trainer/indoor rides — smart trainers
+        # report power just like outdoor power meters, and excluding trainer=True here
+        # was silently starving VirtualRides of TSS. Only GPS fetching should skip
+        # trainer activities, since those genuinely have no location data.
         power_stream = None
         np_real = None
-        if fetch_streams and not parsed.get("trainer"):
+        if fetch_streams:
             client = await self._get_client()
             if client:
                 power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
@@ -358,7 +359,7 @@ class GarminImportService:
             avg_p = None
             source = None
 
-        # Fetch GPS track for outdoor activities (skip trainer/indoor)
+        # Fetch GPS track for outdoor activities (skip trainer/indoor — genuinely no location data)
         latlng_stream = None
         if fetch_streams and not parsed.get("trainer"):
             client = await self._get_client()

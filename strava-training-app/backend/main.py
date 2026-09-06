@@ -202,7 +202,9 @@ async def recalculate_pmc(db: AsyncSession):
         day = row.start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         daily_tss[day] += row.tss or 0
 
-    pmc_data = calculate_pmc(dict(daily_tss))
+    today_midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    end_date = max(today_midnight, max(daily_tss.keys()))
+    pmc_data = calculate_pmc(dict(daily_tss), end_date=end_date)
 
     # Upsert into training_metrics
     for entry in pmc_data:
@@ -1377,7 +1379,47 @@ async def debug_garmin_tokens():
         "files": file_info,
     }
 
+@app.get("/trainiq/debug/garmin-lib-check")
+async def debug_garmin_lib_check():
+    """Eenmalige check: python-versie + garminconnect-versie + workout-library methodes."""
+    import sys
+    import inspect
+    import importlib.metadata
 
+    result = {
+        "python_version": sys.version,
+        "garminconnect_version": None,
+        "methods_present": {},
+        "signatures": {},
+        "error": None,
+    }
+
+    try:
+        result["garminconnect_version"] = importlib.metadata.version("garminconnect")
+    except Exception as e:
+        result["error"] = f"version lookup failed: {e}"
+
+    try:
+        from garminconnect import Garmin
+
+        for method_name in [
+            "get_workouts", "get_workout_by_id", "download_workout",
+            "upload_workout", "schedule_workout", "login",
+        ]:
+            result["methods_present"][method_name] = hasattr(Garmin, method_name)
+
+        for method_name in ["get_workouts", "get_workout_by_id"]:
+            if hasattr(Garmin, method_name):
+                try:
+                    result["signatures"][method_name] = str(
+                        inspect.signature(getattr(Garmin, method_name))
+                    )
+                except Exception as e:
+                    result["signatures"][method_name] = f"signature failed: {e}"
+    except Exception as e:
+        result["error"] = f"garminconnect import failed: {e}"
+
+    return result
 
 @app.get("/trainiq/debug/power-stats")
 async def power_stats(db: AsyncSession = Depends(get_db)):
