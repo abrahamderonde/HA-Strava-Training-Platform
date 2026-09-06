@@ -2794,6 +2794,50 @@ async def add_manual_activity(request: Request, db: AsyncSession = Depends(get_d
     return {"status": "ok", "activity_id": activity.id, "tss": tss}
 
 
+@app.post("/trainiq/planning/workouts/from-library")
+async def add_workout_from_library(request: Request, db: AsyncSession = Depends(get_db)):
+    data = await request.json()
+    library_id = data.get("library_id")
+    date_str = data.get("date")
+    goal_id = data.get("goal_id")
+    if not library_id or not date_str:
+        raise HTTPException(status_code=400, detail="library_id and date are required")
+
+    result = await db.execute(select(WorkoutLibrary).where(WorkoutLibrary.id == library_id))
+    lib = result.scalar_one_or_none()
+    if not lib:
+        raise HTTPException(status_code=404, detail="Library workout not found")
+
+    ftp = await get_current_ftp(db)
+    duration_s = lib.estimated_duration_s or sum(
+        int(iv.get("duration_seconds", 0)) * int(iv.get("repeats", 1)) for iv in (lib.intervals or [])
+    )
+    weighted_if_sq = 0.0
+    for iv in (lib.intervals or []):
+        p_low, p_high = iv.get("power_low"), iv.get("power_high")
+        dur = int(iv.get("duration_seconds", 0)) * int(iv.get("repeats", 1))
+        if p_low and p_high and dur > 0 and ftp > 0:
+            avg_p = (p_low + p_high) / 2
+            weighted_if_sq += dur * (avg_p / ftp) ** 2
+    target_tss = round((weighted_if_sq / 3600) * 100, 1) if duration_s else None
+
+    workout = PlannedWorkout(
+        date=datetime.fromisoformat(date_str),
+        title=lib.name,
+        description=f"Uit workout-bibliotheek ({lib.source})",
+        workout_type=lib.workout_type or "endurance",
+        target_tss=target_tss,
+        target_duration_minutes=round(duration_s / 60) if duration_s else None,
+        intervals=lib.intervals,
+        goal_id=goal_id,
+    )
+    db.add(workout)
+    lib.times_used += 1
+    await db.commit()
+    await db.refresh(workout)
+    return {"status": "ok", "workout_id": workout.id}
+
+
 @app.delete("/trainiq/planning/workouts/{workout_id}")
 async def delete_planned_workout(workout_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a planned workout and remove it from Garmin Connect."""

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { addDays, startOfWeek, format, parseISO, addWeeks } from 'date-fns'
-import { ChevronLeft, ChevronRight, RefreshCw, Zap, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, Zap, Download, BookOpen } from 'lucide-react'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
@@ -33,11 +33,32 @@ export default function Planning() {
     event_name: '', event_date: '', event_distance_km: '',
     event_elevation_m: '', goal_description: '', weekly_hours: 8
   })
+  const [showLibraryPanel, setShowLibraryPanel] = useState(false)
+  const [libraryItems, setLibraryItems] = useState([])
+  const [libLoading, setLibLoading] = useState(false)
+  const [libFilterType, setLibFilterType] = useState('')
+  const [libSearch, setLibSearch] = useState('')
+  const [libPickDate, setLibPickDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [addingLibId, setAddingLibId] = useState(null)
 
   useEffect(() => {
     fetch('/trainiq/planning/ftp-test-due')
       .then(r => r.json()).then(setFtpTestDue).catch(() => {})
   }, [])
+
+  const loadLibrary = () => {
+    setLibLoading(true)
+    const params = new URLSearchParams()
+    if (libFilterType) params.set('workout_type', libFilterType)
+    if (libSearch) params.set('q', libSearch)
+    fetch(`/trainiq/workout-library?${params.toString()}`)
+      .then(r => r.json()).then(d => { setLibraryItems(Array.isArray(d) ? d : []); setLibLoading(false) })
+      .catch(() => setLibLoading(false))
+  }
+
+  useEffect(() => {
+    if (showLibraryPanel) loadLibrary()
+  }, [showLibraryPanel, libFilterType])
 
   const scheduleFtpTest = async (date, indoor = true) => {
     setSchedulingFtpTest(true)
@@ -220,6 +241,24 @@ export default function Planning() {
     setStatus('Exporting to Garmin...')
     const res = await fetch(`/trainiq/planning/export-to-garmin/${workoutId}`, { method: 'POST' })
     setStatus(res.ok ? 'Exported to Garmin!' : 'Garmin export failed — check log')
+  }
+
+  const addFromLibrary = async (libraryId) => {
+    setAddingLibId(libraryId)
+    try {
+      const res = await fetch('/trainiq/planning/workouts/from-library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ library_id: libraryId, date: libPickDate + 'T09:00:00', goal_id: activeGoal?.id }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setStatus('Workout uit bibliotheek toegevoegd!')
+      await loadWorkouts()
+    } catch (e) {
+      setStatus(`Fout: ${e.message}`)
+    } finally {
+      setAddingLibId(null)
+    }
   }
 
   // Build global plan chart data
@@ -477,6 +516,70 @@ export default function Planning() {
                   </div>
                 </div>
               </>
+            )}
+          </div>
+
+          {/* Workout uit bibliotheek toevoegen */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setShowLibraryPanel(v => !v)}>
+              <div className="card-title" style={{ margin: 0 }}>📚 Kies workout uit bibliotheek</div>
+              <BookOpen size={16} style={{ color: 'var(--muted)' }} />
+            </div>
+
+            {showLibraryPanel && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <select value={libPickDate} onChange={e => setLibPickDate(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
+                    {Array.from({ length: 7 }, (_, i) => {
+                      const d = addDays(weekStart, i)
+                      const val = format(d, 'yyyy-MM-dd')
+                      return <option key={val} value={val}>{DAY_NAMES[i]} {format(d, 'd MMM')}</option>
+                    })}
+                  </select>
+                  <select value={libFilterType} onChange={e => setLibFilterType(e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
+                    <option value="">Alle types</option>
+                    <option value="endurance">Endurance</option>
+                    <option value="threshold">Threshold</option>
+                    <option value="vo2max">VO2max</option>
+                    <option value="recovery">Recovery</option>
+                    <option value="race">Race</option>
+                  </select>
+                  <input value={libSearch} onChange={e => setLibSearch(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && loadLibrary()}
+                    placeholder="Zoek op naam…"
+                    style={{ flex: 1, minWidth: 140, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }} />
+                  <button className="btn btn-ghost btn-sm" onClick={loadLibrary}>Zoeken</button>
+                </div>
+
+                {libLoading ? (
+                  <div style={{ color: 'var(--muted)', fontSize: 13 }}>Laden…</div>
+                ) : libraryItems.length === 0 ? (
+                  <div style={{ color: 'var(--muted)', fontSize: 13 }}>Geen workouts gevonden.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                    {libraryItems.map(w => (
+                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '8px 12px', background: 'var(--surface2)', borderRadius: 8, fontSize: 13 }}>
+                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: 'var(--bg)', color: 'var(--muted)', textTransform: 'uppercase' }}>
+                          {w.source}
+                        </span>
+                        <span style={{ flex: 1 }}>{w.name}</span>
+                        <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                          {w.estimated_duration_s ? `${Math.round(w.estimated_duration_s / 60)}min` : '—'}
+                          {w.workout_type ? ` · ${w.workout_type}` : ''}
+                        </span>
+                        <button className="btn btn-ghost btn-sm" disabled={addingLibId === w.id}
+                          onClick={() => addFromLibrary(w.id)}>
+                          {addingLibId === w.id ? 'Toevoegen…' : 'Voeg toe'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

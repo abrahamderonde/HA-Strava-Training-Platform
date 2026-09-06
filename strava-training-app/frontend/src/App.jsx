@@ -9,10 +9,11 @@ import Eddington from './pages/Eddington'
 import Settings from './pages/Settings'
 import CommuteGenerator from './pages/CommuteGenerator'
 import Stats from './pages/Stats'
+import WorkoutLibrary from './pages/WorkoutLibrary'
 import {
   LayoutDashboard, Calendar as CalIcon, TrendingUp,
   Zap, Target, Settings as SettingsIcon, Activity,
-  Map, Award, Bike, BarChart2, Menu, X
+  Map, Award, Bike, BarChart2, Menu, X, Library
 } from 'lucide-react'
 import './index.css'
 
@@ -29,6 +30,7 @@ const NAV = [
   { to: '/gemeenten',    icon: Map,              label: 'NL Challenge'  },
   { to: '/eddington',    icon: Award,            label: 'Eddington'  },
   { to: '/stats',        icon: BarChart2,        label: 'Stats'      },
+  { to: '/workout-library', icon: Library,       label: 'Bibliotheek' },
   { to: '/commutes',     icon: Bike,             label: 'Commutes'   },
   { to: '/settings',     icon: SettingsIcon,     label: 'Settings'   },
 ]
@@ -170,6 +172,7 @@ export default function App() {
             <Route path="/gemeenten"    element={<Gemeenten />} />
             <Route path="/eddington"    element={<Eddington />} />
             <Route path="/stats"       element={<Stats />} />
+            <Route path="/workout-library" element={<WorkoutLibrary />} />
             <Route path="/commutes"     element={<CommuteGenerator />} />
             <Route path="/settings"     element={<Settings />} />
           </Routes>
