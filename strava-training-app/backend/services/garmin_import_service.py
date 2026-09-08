@@ -16,6 +16,7 @@ Garmin field mapping → Activity model:
   trainer             → trainer (bool)
   lapDTO[].messageIndex → used for power/HR streams via get_activity_details
 """
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
@@ -185,22 +186,28 @@ class GarminImportService:
             logger.warning("Failed to parse activity %s: %s", raw.get("activityId"), e)
             return None
 
-    async def _fetch_power_stream(self, client, garmin_id: int) -> Optional[List[float]]:
-        """Fetch per-second power data by downloading the TCX file and parsing <Watts> tags.
-        TCX is far more reliable than the JSON activity-details metrics API, which has
-        been observed returning garbled/mis-scaled values."""
+    async def _fetch_power_stream(self, client, garmin_id: int, _retry: bool = True) -> Optional[List[float]]:
         try:
-            from garminconnect import Garmin
+            from garminconnect import Garmin, GarminConnectTooManyRequestsError
             import xml.etree.ElementTree as ET
 
-            tcx_bytes = client.download_activity(
-                str(garmin_id),
-                dl_fmt=Garmin.ActivityDownloadFormat.TCX,
-            )
+            try:
+                tcx_bytes = client.download_activity(
+                    str(garmin_id),
+                    dl_fmt=Garmin.ActivityDownloadFormat.TCX,
+                )
+            except GarminConnectTooManyRequestsError:
+                if _retry:
+                    logger.warning("Rate-limited fetching TCX for %s, backing off 5s and retrying once", garmin_id)
+                    await asyncio.sleep(5.0)
+                    return await self._fetch_power_stream(client, garmin_id, _retry=False)
+                logger.warning("Rate-limited fetching TCX for %s, giving up after retry", garmin_id)
+                return None
+
             if not tcx_bytes:
                 logger.warning("No TCX data returned by Garmin for activity %s", garmin_id)
                 return None
-
+                
             root = ET.fromstring(tcx_bytes)
             ns = {
                 'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2',
@@ -431,6 +438,7 @@ class GarminImportService:
                     logger.warning("Error importing activity %s: %s",
                                    raw.get("activityId"), e)
                     errors += 1
+                await asyncio.sleep(0.3)
 
         except Exception as e:
             logger.error("Garmin history import failed: %s", e)

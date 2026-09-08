@@ -158,6 +158,7 @@ Respond ONLY with valid JSON:
         week_start: datetime,
         day_settings: List[Dict],  # [{date, workout_minutes, indoor, commute_minutes}]
         global_plan_week: Dict = None,  # current week from global plan
+        few_shot_examples: Optional[List[Dict]] = None,  # [{name, workout_type, duration_minutes, intervals}]
     ) -> Optional[Dict]:
         """
         Generate a detailed weekly training plan.
@@ -215,6 +216,24 @@ Respond ONLY with valid JSON:
         phase_dist = {"Base":"80% Z1-Z2 · 10% Z3 · 10% Z4","Build":"70% Z1-Z2 · 15% Z3-Z4 · 15% Z4-Z5","Peak":"65% Z1-Z2 · 20% Z3-Z4 · 15% Z5+","Taper":"80% Z1-Z2 · 20% Z3-Z4 · no Z5+"}[phase]
         tsb_rule = ("RECOVERY — Z1-Z2 only, no intervals" if current_tsb < -25 else "FATIGUED — max one quality session" if current_tsb < -10 else "BALANCED — follow phase" if current_tsb < 5 else "FRESH — one quality session ok")
 
+        examples_block = ""
+        if few_shot_examples:
+            example_lines = []
+            for ex in few_shot_examples[:8]:
+                iv_summary = json.dumps(ex.get("intervals", []), separators=(",", ":"))
+                example_lines.append(
+                    f"- \"{ex.get('name', 'Untitled')}\" ({ex.get('workout_type', '?')}, "
+                    f"{ex.get('duration_minutes', '?')}min): {iv_summary}"
+                )
+            examples_block = f"""
+## Reference workouts from the athlete's own library
+These are real workouts the athlete has actually ridden and rated well. Use them as
+STRUCTURAL inspiration only — interval shapes, step patterns, rough proportions —
+never copy verbatim, and always keep zone compliance and TSB rules above as the
+final authority over anything shown here.
+{chr(10).join(example_lines)}
+"""
+
         prompt = f"""You are a cycling coach. Science first, engagement second.
 
 ## Athlete
@@ -225,7 +244,7 @@ FTP {ftp}W | CTL {current_ctl:.1f} | ATL {current_atl:.1f} | TSB {current_tsb:.1
 {global_context}
 ## Zones
 {zones_str}
-
+{examples_block}
 ## Schedule
 {chr(10).join(day_lines)}
 

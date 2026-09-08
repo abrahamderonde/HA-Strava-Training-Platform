@@ -2250,6 +2250,8 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
                     global_plan_week = week
                     break
 
+    few_shot_examples = await _select_few_shot_workouts(db, day_settings, ftp)
+
     ai = AICoachService(CONFIG["anthropic_api_key"])
     plan = await ai.generate_weekly_plan(
         goal=goal,
@@ -2261,6 +2263,7 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
         week_start=week_start,
         day_settings=day_settings,
         global_plan_week=global_plan_week,
+        few_shot_examples=few_shot_examples,
     )
 
     if not plan:
@@ -2885,6 +2888,46 @@ async def delete_manual_activity(activity_id: int, db: AsyncSession = Depends(ge
     return {"status": "deleted"}
 
 
+
+
+async def _select_few_shot_workouts(db: AsyncSession, day_settings: List[Dict], ftp: float) -> List[Dict]:
+    """Selecteert relevante library-workouts als few-shot voorbeelden.
+    Hard filter: source != trainiq, duur binnen ±25% van een geplande trainingsdag.
+    Tiebreaker: hoogste rating (nooit primair filter, alleen bij gelijke kandidaten)."""
+    training_minutes = sorted({d["workout_minutes"] for d in day_settings if d.get("workout_minutes")})
+    if not training_minutes:
+        return []
+
+    result = await db.execute(
+        select(WorkoutLibrary)
+        .where(WorkoutLibrary.source != "trainiq")
+        .where(WorkoutLibrary.estimated_duration_s.isnot(None))
+        .where(WorkoutLibrary.intervals.isnot(None))
+    )
+    candidates = result.scalars().all()
+
+    selected: Dict[int, WorkoutLibrary] = {}
+    for target_min in training_minutes:
+        low, high = target_min * 0.75 * 60, target_min * 1.25 * 60
+        matches = [
+            c for c in candidates
+            if c.id not in selected and low <= (c.estimated_duration_s or 0) <= high
+        ]
+        matches.sort(key=lambda c: ((c.rating or 0), -(c.times_used or 0)), reverse=True)
+        for m in matches[:2]:
+            selected[m.id] = m
+        if len(selected) >= 8:
+            break
+
+    return [
+        {
+            "name": w.name,
+            "workout_type": w.workout_type or "unclassified",
+            "duration_minutes": round((w.estimated_duration_s or 0) / 60),
+            "intervals": w.intervals,
+        }
+        for w in list(selected.values())[:8]
+    ]
 
 
 async def get_current_ftp(db: AsyncSession) -> float:

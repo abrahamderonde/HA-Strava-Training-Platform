@@ -111,7 +111,13 @@ Register this URL with Strava via their [webhook subscription API](https://devel
 
 ---
 
-## 8. Municipality Map (Gemeenten)
+## 8. Workout Library
+
+TrainIQ periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **TrainIQ** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (TrainIQ-labeled workouts are always excluded to avoid the AI learning from its own output).
+
+Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page.
+
+## 9. Municipality Map (Gemeenten)
 
 The gemeente map loads Dutch municipal boundaries from [PDOK](https://www.pdok.nl) (Dutch government open geodata) the first time you open that page. This download is cached locally — it only happens once.
 
