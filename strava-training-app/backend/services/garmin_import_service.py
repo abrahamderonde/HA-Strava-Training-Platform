@@ -438,7 +438,7 @@ class GarminImportService:
                     logger.warning("Error importing activity %s: %s",
                                    raw.get("activityId"), e)
                     errors += 1
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(1.0)
 
         except Exception as e:
             logger.error("Garmin history import failed: %s", e)
