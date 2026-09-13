@@ -578,7 +578,6 @@ async def garmin_backfill_latlng(background_tasks: BackgroundTasks):
             result = await db.execute(
                 select(Activity)
                 .where(Activity.strava_id < 0)
-                .where(Activity.trainer == False)
                 .where(Activity.latlng_stream.is_(None))
                 .where(Activity.distance > 500)
             )
