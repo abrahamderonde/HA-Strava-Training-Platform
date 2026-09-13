@@ -53,11 +53,9 @@ export default function Gemeenten() {
     if (!mapReady || !mapRef.current || leafletMap.current) return
     const L = window.L
     leafletMap.current = L.map(mapRef.current, { center: [52.3, 5.3], zoom: 7 })
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(leafletMap.current)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { attribution: '© OpenStreetMap contributors', maxZoom: 19 }
+    ).addTo(leafletMap.current)
   }, [mapReady])
 
   // Redraw gemeente coloring whenever the year filter, visited list, or a GPX
