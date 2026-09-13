@@ -184,7 +184,6 @@ async def _recover_missing_power(db: AsyncSession, svc: GarminImportService, day
     result = await db.execute(
         select(Activity)
         .where(Activity.strava_id < 0)
-        .where(Activity.trainer == False)
         .where(Activity.average_watts.is_(None))
         .where(Activity.start_date >= cutoff)
     )
