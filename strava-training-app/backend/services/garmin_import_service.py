@@ -19,23 +19,28 @@ Garmin field mapping → Activity model:
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..models.database import Activity, TrainingMetrics
+from ..models.database import Activity, FTPHistory, TrainingMetrics
 from .training_science import (
     calculate_tss_from_power,
     calculate_pmc,
     estimate_tss_from_hr,
+    estimate_tss_no_data,
     calculate_normalized_power,
 )
 
 logger = logging.getLogger(__name__)
 
 TOKEN_PATH = Path("/config/strava_training/garmin_tokens")
+
+MIN_POWER_COVERAGE: float = 0.5
+MAX_TSS: float = 500.0
+DEFAULT_MAX_HR: float = 185.0
 
 # Map Garmin activity type keys → Strava-style sport types used in the app
 SPORT_TYPE_MAP = {
@@ -247,7 +252,6 @@ class GarminImportService:
     async def _get_ftp_at_date(self, target_date: datetime) -> float:
         """Look up the FTP that was in effect on a given date from FTPHistory,
         falling back to self.ftp (current) if no history exists yet."""
-        from .models.database import FTPHistory
         try:
             result = await self.db.execute(
                 select(FTPHistory)
@@ -261,6 +265,37 @@ class GarminImportService:
         except Exception as e:
             logger.debug("FTP history lookup failed, using current FTP: %s", e)
         return float(self.ftp) if self.ftp else 200.0
+
+        def _compute_tss(
+        self,
+        power_stream: Optional[List[float]],
+        avg_power: Optional[float],
+        avg_hr: Optional[float],
+        max_hr: Optional[float],
+        elapsed: int,
+        ftp: float,
+        sport_type: str,
+    ) -> Tuple[Optional[float], Optional[str]]:
+        if elapsed <= 0:
+            return None, None
+
+        np_value: Optional[float] = None
+        if power_stream:
+            active: int = sum(1 for w in power_stream if w > 0)
+            if active / len(power_stream) >= MIN_POWER_COVERAGE:
+                np_value = calculate_normalized_power(power_stream)
+        elif avg_power and avg_power > 0:
+            np_value = avg_power
+
+        if np_value and np_value > 0 and ftp > 0:
+            tss: float = elapsed * np_value * (np_value / ftp) / (ftp * 3600) * 100
+            return round(min(tss, MAX_TSS), 1), "power" if power_stream else "power_avg"
+
+        if avg_hr and avg_hr > 0:
+            hr_tss: float = estimate_tss_from_hr(elapsed, avg_hr, max_hr or DEFAULT_MAX_HR, sport_type)
+            return round(min(hr_tss, MAX_TSS), 1), "hr"
+
+        return round(min(estimate_tss_no_data(elapsed, sport_type), MAX_TSS), 1), "estimate"
 
     async def import_activity(self, raw: Dict, fetch_streams: bool = True) -> Optional[Activity]:
         """Import a single Garmin activity into the database."""
@@ -304,67 +339,24 @@ class GarminImportService:
                         parsed.get("name")
                     )
 
-        # Calculate TSS using real NP when available, falling back to avg power, then HR
-        tss = None
-        try:
-            avg_p = float(parsed.get("average_watts") or 0) or None
-            elapsed = int(parsed.get("elapsed_time") or 0)
-            avg_hr = float(parsed.get("average_heartrate") or 0) or None
-            max_hr = float(parsed.get("max_heartrate") or 185)
-            ftp = await self._get_ftp_at_date(parsed["start_date"])
+        elapsed: int = int(parsed.get("elapsed_time") or 0)
+        avg_p: Optional[float] = float(parsed.get("average_watts") or 0) or None
+        avg_hr: Optional[float] = float(parsed.get("average_heartrate") or 0) or None
+        max_hr: Optional[float] = float(parsed.get("max_heartrate") or 0) or None
+        ftp: float = await self._get_ftp_at_date(parsed["start_date"])
 
-            if not self.ftp or ftp == 200.0:
-                logger.warning(
-                    "Using fallback FTP=200W for '%s' — if your real FTP differs, "
-                    "TSS will be wrong until recalculated. self.ftp=%s",
-                    parsed.get("name"), self.ftp
-                )
-
-            # Prefer true NP from power stream — this matches intervals.icu's calculation
-            np_for_tss = np_real if np_real and np_real > 0 else avg_p
-            source = None
-
-            if np_for_tss and np_for_tss > 0 and ftp > 0 and elapsed > 0:
-                if_est = np_for_tss / ftp
-                tss = (elapsed * np_for_tss * if_est) / (ftp * 3600) * 100
-                source = "power" if np_real else "power_avg"
-
-                # Flag suspicious NP/avg_power ratios for debugging
-                if avg_p and np_for_tss > avg_p * 1.5:
-                    logger.warning(
-                        "Suspicious NP for '%s': NP=%.0fW vs avg=%.0fW (ratio %.2f) — "
-                        "elapsed=%ds, power_stream_len=%s, IF=%.2f, TSS=%.0f",
-                        parsed.get("name"), np_for_tss, avg_p, np_for_tss/avg_p,
-                        elapsed, len(power_stream) if power_stream else 0, if_est, tss
-                    )
-                if if_est > 1.15:
-                    logger.warning(
-                        "High IF for '%s': IF=%.2f (NP=%.0fW, FTP=%.0fW) — "
-                        "check if FTP is set correctly or if this was a genuinely hard/short effort",
-                        parsed.get("name"), if_est, np_for_tss, ftp
-                    )
-            elif avg_hr and elapsed > 0:
-                tss = estimate_tss_from_hr(
-                    duration_seconds=elapsed,
-                    avg_hr=avg_hr,
-                    max_hr=max_hr or 185,
-                    sport_type=parsed["sport_type"],
-                )
-                source = "hr"
-
-            # Sanity cap
-            if tss and tss > 500:
-                logger.warning("TSS %.0f too high for %s, capping at 500", tss, parsed["name"])
-                tss = 500.0
-
-            # NP for storage: real NP if we have it, else the avg-power approximation
-            np_approx = round(np_real) if np_real else (round(avg_p * 1.05) if avg_p else None)
-        except Exception as e:
-            logger.warning("TSS calculation failed for %s: %s", parsed.get("name"), e)
-            tss = None
-            np_approx = None
+        tss, source = self._compute_tss(
+            power_stream, avg_p, avg_hr, max_hr, elapsed, ftp, parsed["sport_type"]
+        )
+        power_used: bool = source in ("power", "power_avg")
+        if not power_used:
+            power_stream = None
             avg_p = None
-            source = None
+        np_approx: Optional[int] = (
+            round(np_real) if power_used and np_real
+            else round(avg_p * 1.05) if avg_p
+            else None
+        )
 
         # Fetch GPS track for outdoor activities (skip trainer/indoor — genuinely no location data)
         latlng_stream = None
@@ -388,7 +380,7 @@ class GarminImportService:
             average_heartrate=parsed.get("average_heartrate"),
             max_heartrate=parsed.get("max_heartrate"),
             tss=tss,
-            has_power=bool(parsed.get("average_watts")),
+            has_power=power_used,
             trainer=parsed["trainer"],
             commute=parsed["commute"],
             power_stream=power_stream,

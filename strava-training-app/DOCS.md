@@ -28,9 +28,7 @@ TrainIQ needs its own Strava API application to access your data.
 
 ## 3. Configure Garmin Connect
 
-TrainIQ uses the `garth` library to push workouts to Garmin Connect. Use your regular Garmin Connect **email** and **password**. No separate API key needed.
-
-> Note: This uses Garmin's unofficial API, the same approach used by many community tools such as garminconnect and garth.
+TrainIQ imports activities from Garmin Connect and pushes workouts to it using the `python-garminconnect` library. Generate the token file on your PC (run `example.py` from python-garminconnect) and copy `garmin_tokens.json` to `/config/strava_training/garmin_tokens/`. Email and password are only used as a fallback when no valid tokens are found.
 
 ---
 
@@ -72,7 +70,17 @@ ftp_initial: 250
 
 ---
 
-## 6. Start and Connect Strava
+## 6. TSS Calculation
+
+For every imported activity TrainIQ uses the first available source:
+
+1. **Power** – Normalized Power from the TCX power stream, only if at least 50% of the samples are above 0 W
+2. **Heart rate** – hrTSS, used when power is missing or unusable (e.g. a power meter failure)
+3. **Estimate** – based on sport type and duration, when neither is available
+
+---
+
+## 7. Start and Connect Strava
 
 1. Click **Start** on the app
 2. Open **TrainIQ** in the HA sidebar
@@ -86,7 +94,7 @@ ftp_initial: 250
 
 ---
 
-## 7. Webhook Setup (real-time sync)
+## 8. Webhook Setup (real-time sync)
 
 For new activities to appear automatically the moment you finish a ride, Strava needs to be able to reach your Home Assistant instance from the internet.
 
@@ -111,13 +119,13 @@ Register this URL with Strava via their [webhook subscription API](https://devel
 
 ---
 
-## 8. Workout Library
+## 9. Workout Library
 
 TrainIQ periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **TrainIQ** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (TrainIQ-labeled workouts are always excluded to avoid the AI learning from its own output).
 
 Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page.
 
-## 9. Municipality Map (Gemeenten)
+## 10. Municipality Map (Gemeenten)
 
 The gemeente map loads Dutch municipal boundaries from [PDOK](https://www.pdok.nl) (Dutch government open geodata) the first time you open that page. This download is cached locally — it only happens once.
 

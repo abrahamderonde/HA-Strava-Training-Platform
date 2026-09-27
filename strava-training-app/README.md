@@ -13,7 +13,7 @@ Inspired by intervals.icu + Join.cc, fully under your own control.
 - **Performance Management Chart (PMC)** — CTL (fitness), ATL (fatigue), TSB (form) using the Banister impulse-response model, including a forward projection based on planned workouts
 - **Power Curve** — Mean Maximal Power across all standard durations from the last 60 days
 - **FTP Estimation** — 3-parameter Critical Power model (Morton, 1996): P(t) = W'/t + CP + (Pmax−CP)·e^(−t/τ), FTP = CP; kept separate from the manually-set FTP
-- **TSS Calculation** — power-based TSS with NP/IF; HR-based fallback; RPE-based fallback; estimated fallback for no-data activities
+- **TSS Calculation** — Power-based TSS with NP/IF (only when the power data is usable); hrTSS when power is missing or faulty; duration/sport estimate when neither exists
 - **Training Goals & AI Planning** — Claude generates a phased training plan and detailed weekly workouts based on fitness, fatigue, and goal
 - **NL Challenge** — tracks Dutch municipalities visited by bike, including GPX route preview
 - **Eddington number** — progress tracking toward the next E value
