@@ -266,7 +266,7 @@ class GarminImportService:
             logger.debug("FTP history lookup failed, using current FTP: %s", e)
         return float(self.ftp) if self.ftp else 200.0
 
-        def _compute_tss(
+    def _compute_tss(
         self,
         power_stream: Optional[List[float]],
         avg_power: Optional[float],
