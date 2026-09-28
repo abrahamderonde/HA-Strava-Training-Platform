@@ -56,6 +56,8 @@ export default function Gemeenten() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       { attribution: '© OpenStreetMap contributors', maxZoom: 19 }
     ).addTo(leafletMap.current)
+    leafletMap.current.getPane('tilePane').style.filter =
+      'grayscale(35%) brightness(0.92) saturate(0.75) contrast(0.95)'
   }, [mapReady])
 
   // Redraw gemeente coloring whenever the year filter, visited list, or a GPX
@@ -91,11 +93,17 @@ export default function Gemeenten() {
 
         if (gpxResult) {
           // Route-preview mode
-          if (newCodes.has(code)) return { fillColor: '#22c55e', fillOpacity: 0.65, color: '#4ade80', weight: 2 }
-          if (alreadyCodes.has(code)) return { fillColor: '#ef4444', fillOpacity: 0.55, color: '#f87171', weight: 2 }
-          if (visitedAll.has(code)) return { fillColor: '#f97316', fillOpacity: 0.35, color: '#fb923c', weight: 1 }
-          return { fillColor: '#1e2533', fillOpacity: 0.5, color: '#2d3748', weight: 0.5 }
+          if (newCodes.has(code)) return { fillColor: '#22c55e', fillOpacity: 0.5, color: '#166534', weight: 2 }
+          if (alreadyCodes.has(code)) return { fillColor: '#ef4444', fillOpacity: 0.4, color: '#991b1b', weight: 2 }
+          if (visitedAll.has(code)) return { fillColor: '#f97316', fillOpacity: 0.28, color: '#9a3412', weight: 1.3 }
+          return { fillColor: '#94a3b8', fillOpacity: 0.1, color: '#475569', weight: 0.8 }
         }
+
+        // Normal year-filter mode
+        if (highlighted.has(code)) return { fillColor: '#f97316', fillOpacity: 0.6, color: '#9a3412', weight: 2 }
+        if (visitedAll.has(code) && highlightYear !== 'all') return { fillColor: '#f97316', fillOpacity: 0.2, color: '#c2410c', weight: 1 }
+        return { fillColor: '#94a3b8', fillOpacity: 0.12, color: '#475569', weight: 0.8 }
+      },
 
         // Normal year-filter mode
         if (highlighted.has(code)) return { fillColor: '#f97316', fillOpacity: 0.8, color: '#fb923c', weight: 1.5 }
@@ -124,7 +132,7 @@ export default function Gemeenten() {
           '<div style="font-family:sans-serif;font-size:13px"><strong>' + name + '</strong><br/>' + statusHtml + '</div>',
           { sticky: true }
         )
-        layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.95, weight: 2 }))
+        layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.55, weight: 2.5, color: '#1e293b' }))
         layer.on('mouseout', () => {
           const style = geoLayer.current.options.style(feature)
           layer.setStyle(style)
@@ -143,7 +151,7 @@ export default function Gemeenten() {
     }
     if (gpxResult?.track_preview?.length > 1) {
       trackLayerRef.current = L.polyline(gpxResult.track_preview, {
-        color: '#ffffff', weight: 2.5, opacity: 0.9
+        color: '#1d4ed8', weight: 3, opacity: 0.9
       }).addTo(leafletMap.current)
       leafletMap.current.fitBounds(trackLayerRef.current.getBounds(), { padding: [40, 40] })
     }
