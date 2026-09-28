@@ -104,12 +104,6 @@ export default function Gemeenten() {
         if (visitedAll.has(code) && highlightYear !== 'all') return { fillColor: '#f97316', fillOpacity: 0.2, color: '#c2410c', weight: 1 }
         return { fillColor: '#94a3b8', fillOpacity: 0.12, color: '#475569', weight: 0.8 }
       },
-
-        // Normal year-filter mode
-        if (highlighted.has(code)) return { fillColor: '#f97316', fillOpacity: 0.8, color: '#fb923c', weight: 1.5 }
-        if (visitedAll.has(code) && highlightYear !== 'all') return { fillColor: '#f97316', fillOpacity: 0.25, color: '#f97316', weight: 0.5 }
-        return { fillColor: '#1e2533', fillOpacity: 0.55, color: '#2d3748', weight: 0.5 }
-      },
       onEachFeature: (feature, layer) => {
         const props = feature.properties || {}
         const code = props.statcode || props.gemeentecode || props.code || ''
@@ -139,7 +133,7 @@ export default function Gemeenten() {
         })
       }
     }).addTo(leafletMap.current)
-  }, [mapReady, boundaries, visited, highlightYear, gpxResult]
+  }, [mapReady, boundaries, visited, highlightYear, gpxResult])
 
   // Draw the GPX track polyline on top, and fit bounds to it
   useEffect(() => {
