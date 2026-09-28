@@ -139,7 +139,7 @@ export default function Gemeenten() {
         })
       }
     }).addTo(leafletMap.current)
-  }, [mapReady, boundaries, visited, highlightYear, gpxResult])
+  }, [mapReady, boundaries, visited, highlightYear, gpxResult]
 
   // Draw the GPX track polyline on top, and fit bounds to it
   useEffect(() => {
