@@ -3150,6 +3150,9 @@ async def get_eddington(db: AsyncSession = Depends(get_db)):
         milestone = EddingtonMilestone(next_e=next_e, initial_gap=rides_needed)
         db.add(milestone)
         await db.commit()
+    if milestone and rides_needed > milestone.initial_gap:
+        milestone.initial_gap = rides_needed
+        await db.commit()
     initial_gap = milestone.initial_gap if milestone else max(1, rides_needed)
     gap_progress = max(0, initial_gap - rides_needed)
 
@@ -3172,6 +3175,28 @@ async def get_eddington(db: AsyncSession = Depends(get_db)):
         "top_days": [round(d, 1) for d in distances[:50]],
     }
 
+@app.patch("/trainiq/eddington/milestone")
+async def set_eddington_milestone(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> Dict[str, int | str]:
+    from .models.database import EddingtonMilestone
+
+    data = await request.json()
+    next_e = int(data["next_e"])
+    initial_gap = int(data["initial_gap"])
+    if initial_gap < 1:
+        raise HTTPException(status_code=400, detail="initial_gap must be >= 1")
+
+    result = await db.execute(
+        select(EddingtonMilestone).where(EddingtonMilestone.next_e == next_e)
+    )
+    milestone = result.scalar_one_or_none()
+    if milestone:
+        milestone.initial_gap = initial_gap
+    else:
+        db.add(EddingtonMilestone(next_e=next_e, initial_gap=initial_gap))
+    await db.commit()
+    return {"status": "ok", "next_e": next_e, "initial_gap": initial_gap}
 
 # ─── Frontend SPA catch-all ───────────────────────────────────────────────────
 
