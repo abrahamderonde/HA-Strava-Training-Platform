@@ -57,7 +57,7 @@ export default function Gemeenten() {
       { attribution: '© OpenStreetMap contributors', maxZoom: 19 }
     ).addTo(leafletMap.current)
     leafletMap.current.getPane('tilePane').style.filter =
-      'grayscale(35%) brightness(0.92) saturate(0.75) contrast(0.95)'
+      'grayscale(35%) brightness(0.60) saturate(0.75) contrast(0.95)'
   }, [mapReady])
 
   // Redraw gemeente coloring whenever the year filter, visited list, or a GPX

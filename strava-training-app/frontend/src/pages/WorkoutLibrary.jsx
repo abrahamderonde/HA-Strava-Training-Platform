@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, Trash2, Star } from 'lucide-react'
+import { RefreshCw, Trash2, Star, ChevronDown, ChevronUp } from 'lucide-react'
+import WorkoutProfileChart from '../components/WorkoutProfileChart'
 
 function StarRating({ value, onChange }) {
   return (
@@ -22,9 +23,15 @@ export default function WorkoutLibrary() {
   const [source, setSource] = useState('')
   const [workoutType, setWorkoutType] = useState('')
   const [q, setQ] = useState('')
+  const [ftp, setFtp] = useState(0)
+  const [expandedId, setExpandedId] = useState(null)
+
+  useEffect(() => {
+    fetch('/trainiq/analytics/ftp').then(r => r.json()).then(d => setFtp(d?.ftp || 0)).catch(() => {})
+  }, [])
 
   const load = () => {
-    setLoading(true)
+      setLoading(true)
     const params = new URLSearchParams()
     if (source) params.set('source', source)
     if (workoutType) params.set('workout_type', workoutType)
@@ -109,35 +116,46 @@ export default function WorkoutLibrary() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.map(w => (
-            <div key={w.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 18px' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{w.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {w.estimated_duration_s ? `${Math.round(w.estimated_duration_s / 60)}min` : '—'}
-                  {' · '}gebruikt {w.times_used}x
+            <div key={w.id} className="card" style={{ padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <button onClick={() => setExpandedId(id => id === w.id ? null : w.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}>
+                  {expandedId === w.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{w.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {w.estimated_duration_s ? `${Math.round(w.estimated_duration_s / 60)}min` : '—'}
+                    {' · '}gebruikt {w.times_used}x
+                  </div>
                 </div>
+                <select value={w.source} onChange={e => patch(w.id, { source: e.target.value })}
+                  style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
+                  <option value="join">Join</option>
+                  <option value="trainiq">TrainIQ</option>
+                  <option value="overig">Overig</option>
+                </select>
+                <select value={w.workout_type || 'unclassified'} onChange={e => patch(w.id, { workout_type: e.target.value })}
+                  style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
+                  <option value="endurance">Endurance</option>
+                  <option value="threshold">Threshold</option>
+                  <option value="vo2max">VO2max</option>
+                  <option value="recovery">Recovery</option>
+                  <option value="race">Race</option>
+                  <option value="unclassified">Ongeclassificeerd</option>
+                </select>
+                <StarRating value={w.rating} onChange={val => patch(w.id, { rating: val })} />
+                <button onClick={() => remove(w.id, w.name)}
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                           borderRadius: 4, padding: '5px 10px', cursor: 'pointer', color: '#ef4444' }}>
+                  <Trash2 size={13} />
+                </button>
               </div>
-              <select value={w.source} onChange={e => patch(w.id, { source: e.target.value })}
-                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
-                <option value="join">Join</option>
-                <option value="trainiq">TrainIQ</option>
-                <option value="overig">Overig</option>
-              </select>
-              <select value={w.workout_type || 'unclassified'} onChange={e => patch(w.id, { workout_type: e.target.value })}
-                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 12 }}>
-                <option value="endurance">Endurance</option>
-                <option value="threshold">Threshold</option>
-                <option value="vo2max">VO2max</option>
-                <option value="recovery">Recovery</option>
-                <option value="race">Race</option>
-                <option value="unclassified">Ongeclassificeerd</option>
-              </select>
-              <StarRating value={w.rating} onChange={val => patch(w.id, { rating: val })} />
-              <button onClick={() => remove(w.id, w.name)}
-                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
-                         borderRadius: 4, padding: '5px 10px', cursor: 'pointer', color: '#ef4444' }}>
-                <Trash2 size={13} />
-              </button>
+              {expandedId === w.id && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <WorkoutProfileChart intervals={w.intervals} ftp={ftp} />
+                </div>
+              )}
             </div>
           ))}
         </div>

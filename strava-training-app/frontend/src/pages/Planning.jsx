@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { addDays, startOfWeek, format, parseISO, addWeeks } from 'date-fns'
-import { ChevronLeft, ChevronRight, RefreshCw, Zap, Download, BookOpen } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, Zap, Download, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
+import WorkoutProfileChart from '../components/WorkoutProfileChart'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
@@ -40,10 +41,15 @@ export default function Planning() {
   const [libSearch, setLibSearch] = useState('')
   const [libPickDate, setLibPickDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [addingLibId, setAddingLibId] = useState(null)
+  const [expandedLibId, setExpandedLibId] = useState(null)
+  const [expandedWorkoutId, setExpandedWorkoutId] = useState(null)
+  const [ftp, setFtp] = useState(0)
 
   useEffect(() => {
     fetch('/trainiq/planning/ftp-test-due')
       .then(r => r.json()).then(setFtpTestDue).catch(() => {})
+    fetch('/trainiq/analytics/ftp')
+      .then(r => r.json()).then(d => setFtp(d?.ftp || 0)).catch(() => {})
   }, [])
 
   const loadLibrary = () => {
@@ -559,22 +565,32 @@ export default function Planning() {
                 ) : libraryItems.length === 0 ? (
                   <div style={{ color: 'var(--muted)', fontSize: 13 }}>Geen workouts gevonden.</div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 380, overflowY: 'auto' }}>
                     {libraryItems.map(w => (
-                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 12px', background: 'var(--surface2)', borderRadius: 8, fontSize: 13 }}>
-                        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: 'var(--bg)', color: 'var(--muted)', textTransform: 'uppercase' }}>
-                          {w.source}
-                        </span>
-                        <span style={{ flex: 1 }}>{w.name}</span>
-                        <span style={{ color: 'var(--muted)', fontSize: 11 }}>
-                          {w.estimated_duration_s ? `${Math.round(w.estimated_duration_s / 60)}min` : '—'}
-                          {w.workout_type ? ` · ${w.workout_type}` : ''}
-                        </span>
-                        <button className="btn btn-ghost btn-sm" disabled={addingLibId === w.id}
-                          onClick={() => addFromLibrary(w.id)}>
-                          {addingLibId === w.id ? 'Toevoegen…' : 'Voeg toe'}
-                        </button>
+                      <div key={w.id} style={{ background: 'var(--surface2)', borderRadius: 8, padding: '8px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                          <button onClick={() => setExpandedLibId(id => id === w.id ? null : w.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}>
+                            {expandedLibId === w.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: 'var(--bg)', color: 'var(--muted)', textTransform: 'uppercase' }}>
+                            {w.source}
+                          </span>
+                          <span style={{ flex: 1 }}>{w.name}</span>
+                          <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                            {w.estimated_duration_s ? `${Math.round(w.estimated_duration_s / 60)}min` : '—'}
+                            {w.workout_type ? ` · ${w.workout_type}` : ''}
+                          </span>
+                          <button className="btn btn-ghost btn-sm" disabled={addingLibId === w.id}
+                            onClick={() => addFromLibrary(w.id)}>
+                            {addingLibId === w.id ? 'Toevoegen…' : 'Voeg toe'}
+                          </button>
+                        </div>
+                        {expandedLibId === w.id && (
+                          <div style={{ marginTop: 8 }}>
+                            <WorkoutProfileChart intervals={w.intervals} ftp={ftp} height={130} />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -635,6 +651,10 @@ export default function Planning() {
                           <Download size={13} />
                           {w.exported_to_garmin ? 'Garmin ✓' : 'Garmin'}
                         </button>
+                        <button className="btn btn-ghost btn-sm" title="Toon profiel"
+                          onClick={() => setExpandedWorkoutId(id => id === w.id ? null : w.id)}>
+                          {expandedWorkoutId === w.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </button>
                         <button className="btn btn-ghost btn-sm"
                           title="Delete workout (also removes from Garmin)"
                           style={{ color: '#ef4444' }}
@@ -648,6 +668,11 @@ export default function Planning() {
                       </div>
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>{w.description}</div>
+                    {expandedWorkoutId === w.id && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <WorkoutProfileChart intervals={w.intervals} ftp={ftp} />
+                      </div>
+                    )}
                   </div>
                 )
               })}
