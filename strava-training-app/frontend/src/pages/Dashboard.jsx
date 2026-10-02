@@ -87,10 +87,13 @@ export default function Dashboard() {
 
   // Combine past + future into one chart dataset
   const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const lastPmc = pmc[pmc.length - 1]
   const chartData = [
-    ...pmc.map(d => ({ ...d, future_ctl: null, future_atl: null, future_tsb: null })),
+    ...pmc.map((d, i) => i === pmc.length - 1
+      ? { ...d, future_ctl: d.ctl, future_atl: d.atl, future_tsb: d.tsb }
+      : { ...d, future_ctl: null, future_atl: null, future_tsb: null }),
     // overlap today's point so lines connect
-    ...future.slice(1).map(d => ({
+    ...future.filter(d => d.date > todayStr).map(d => ({
       date: d.date,
       ctl: null, atl: null, tsb: null, tss: d.tss,
       future_ctl: d.ctl, future_atl: d.atl, future_tsb: d.tsb,

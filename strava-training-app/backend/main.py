@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
+from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from typing import Dict, Set
@@ -1562,7 +1563,10 @@ async def get_pmc_future(days: int = 60, db: AsyncSession = Depends(get_db)):
 
     # Get current CTL/ATL from latest TrainingMetrics
     latest_result = await db.execute(
-        select(TrainingMetrics).order_by(TrainingMetrics.date.desc()).limit(1)
+        select(TrainingMetrics)
+        .where(TrainingMetrics.date < datetime.combine(today, datetime.min.time()))
+        .order_by(TrainingMetrics.date.desc())
+        .limit(1)
     )
     latest = latest_result.scalar_one_or_none()
     if not latest:
@@ -1577,26 +1581,35 @@ async def get_pmc_future(days: int = 60, db: AsyncSession = Depends(get_db)):
     pw_result = await db.execute(
         select(PlannedWorkout)
         .where(PlannedWorkout.date >= future_start)
-        .where(PlannedWorkout.date <= future_end)
-        .where(PlannedWorkout.completed != False)  # exclude skipped
+        .where(PlannedWorkout.date < future_end + timedelta(days=1))
+        .where(or_(PlannedWorkout.completed.is_(None), PlannedWorkout.completed == True))
     )
     planned = pw_result.scalars().all()
 
-    # Build day→TSS map from planned workouts
-    planned_tss = {}
-    for w in planned:
-        day = w.date.date() if hasattr(w.date, 'date') else w.date
-        tss = w.actual_tss or w.target_tss or 0
-        planned_tss[day] = planned_tss.get(day, 0) + tss
+    done_result = await db.execute(
+        select(Activity.start_date, Activity.tss)
+        .where(Activity.start_date >= future_start)
+        .where(Activity.tss.isnot(None))
+    )
+    done_tss: Dict[date, float] = {}
+    for row in done_result.all():
+        d = row.start_date.date()
+        done_tss[d] = done_tss.get(d, 0.0) + float(row.tss or 0)
 
-    # Project forward day by day
+    planned_tss: Dict[date, float] = {}
+    for w in planned:
+        day = w.date.date()
+        if w.completed is True:
+            continue
+        planned_tss[day] = planned_tss.get(day, 0.0) + float(w.target_tss or 0)
+
     projection = []
     for i in range(days + 1):
         day = today + timedelta(days=i)
-        tss = planned_tss.get(day, 0)
+        tss = done_tss.get(day, 0.0) + planned_tss.get(day, 0.0)
+        tsb = ctl - atl
         ctl = ctl * CTL_DECAY + tss * CTL_GAIN
         atl = atl * ATL_DECAY + tss * ATL_GAIN
-        tsb = ctl - atl  # previous day's CTL - ATL (simplified)
         projection.append({
             "date": day.isoformat(),
             "ctl": round(ctl, 1),
