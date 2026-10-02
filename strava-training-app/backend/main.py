@@ -1146,7 +1146,31 @@ async def latlng_stats(db: AsyncSession = Depends(get_db)):
         "sample_first_point": sample.latlng_stream[0] if sample else None,
     }
 
+@app.get("/trainiq/debug/workout-library-raw/{library_id}")
+async def debug_workout_library_raw(library_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(WorkoutLibrary).where(WorkoutLibrary.id == library_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Not found")
 
+    segments = ((entry.raw_garmin_json or {}).get("workoutSegments") or [])
+    steps = segments[0].get("workoutSteps") if segments else []
+
+    def summarize(step):
+        return {
+            "type": step.get("type"),
+            "stepType": step.get("stepType"),
+            "targetType": step.get("targetType"),
+            "targetValueOne": step.get("targetValueOne"),
+            "targetValueTwo": step.get("targetValueTwo"),
+            "zoneNumber": step.get("zoneNumber"),
+        }
+
+    return {
+        "name": entry.name,
+        "parsed_intervals": entry.intervals,
+        "raw_steps_summary": [summarize(s) for s in steps],
+    }
 
 
 
