@@ -17,7 +17,7 @@ from sqlalchemy import select, func, or_
 from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from typing import Dict, Set
+from typing import Any, Dict, Set
 from fastapi import UploadFile, File
 from .models.database import (
     init_db, get_db, Activity, TrainingMetrics, PowerCurve,
@@ -151,6 +151,7 @@ async def _export_workouts_for_date(db: AsyncSession, target_date):
         .where(PlannedWorkout.date >= start)
         .where(PlannedWorkout.date <= end)
         .where(PlannedWorkout.exported_to_garmin == False)
+        .where(PlannedWorkout.workout_type != "commute")
     )
     workouts = result.scalars().all()
     if not workouts:
@@ -1607,22 +1608,28 @@ async def get_pmc_future(days: int = 14, db: AsyncSession = Depends(get_db)):
     planned = pw_result.scalars().all()
 
     done_result = await db.execute(
-        select(Activity.start_date, Activity.tss)
+        select(Activity.start_date, Activity.tss, Activity.commute)
         .where(Activity.start_date >= future_start)
         .where(Activity.tss.isnot(None))
     )
     done_tss: Dict[date, float] = {}
+    done_commute_tss: Dict[date, float] = {}
     for row in done_result.all():
         d = row.start_date.date()
         done_tss[d] = done_tss.get(d, 0.0) + float(row.tss or 0)
+        if row.commute:
+            done_commute_tss[d] = done_commute_tss.get(d, 0.0) + float(row.tss or 0)
 
     planned_tss: Dict[date, float] = {}
     for w in planned:
-        day = w.date.date()
         if w.completed is True:
             continue
-        planned_tss[day] = planned_tss.get(day, 0.0) + float(w.target_tss or 0)
-
+        day = w.date.date()
+        value = float(w.target_tss or 0)
+        if w.workout_type == "commute":
+            value = max(0.0, value - done_commute_tss.get(day, 0.0))
+        planned_tss[day] = planned_tss.get(day, 0.0) + value
+        
     projection = []
     for i in range(days + 1):
         day = today + timedelta(days=i)
@@ -2366,7 +2373,41 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
 
     return plan
 
+@app.post("/trainiq/planning/commutes")
+async def save_planned_commutes(request: Request, db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    data = await request.json()
+    week_start = datetime.fromisoformat(data["week_start"])
+    week_end = week_start + timedelta(days=7)
+    day_settings: list = data.get("day_settings") or []
 
+    existing = (await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.workout_type == "commute")
+        .where(PlannedWorkout.date >= week_start)
+        .where(PlannedWorkout.date < week_end)
+    )).scalars().all()
+    for wo in existing:
+        await db.delete(wo)
+
+    created = 0
+    for ds in day_settings:
+        minutes = int(ds.get("commute_minutes") or 0)
+        if minutes <= 0:
+            continue
+        day = datetime.fromisoformat(ds["date"][:10]).replace(hour=7)
+        db.add(PlannedWorkout(
+            date=day,
+            title="Commute",
+            description=f"Planned commute ({minutes} min)",
+            workout_type="commute",
+            target_tss=round((minutes / 60) * (0.65 ** 2) * 100, 1),
+            target_duration_minutes=minutes,
+            target_if=0.65,
+        ))
+        created += 1
+
+    await db.commit()
+    return {"status": "ok", "created": created}
 
 
 @app.post("/trainiq/planning/push-to-intervals/{workout_id}")
@@ -2563,7 +2604,7 @@ async def mark_workout(workout_id: int, request: Request, db: AsyncSession = Dep
         activity = Activity(
             strava_id=None,
             name=workout.title,
-            sport_type="VirtualRide" if getattr(workout, 'indoor', True) else "Ride",
+            sport_type="Ride" if workout.workout_type == "commute" else "VirtualRide",
             start_date=workout.date,
             elapsed_time=int(duration),
             moving_time=int(duration),
@@ -2573,8 +2614,8 @@ async def mark_workout(workout_id: int, request: Request, db: AsyncSession = Dep
             np=round(avg_power * 1.05),
             tss=tss,
             has_power=True,
-            trainer=True,
-            commute=False,
+            trainer=workout.workout_type != "commute",
+            commute=workout.workout_type == "commute",
             synthetic=True,
         )
         db.add(activity)

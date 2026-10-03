@@ -126,7 +126,7 @@ export default function Planning() {
     const to = format(addDays(weekStart, 6), 'yyyy-MM-dd')
     const res = await fetch(`/trainiq/planning/workouts?from_date=${from}&to_date=${to}`)
       .then(r => r.json()).catch(() => [])
-    setWorkouts(res)
+    setWorkouts(Array.isArray(res) ? res.filter(w => w.workout_type !== 'commute') : [])
   }
 
   // Update day settings when week changes, preserving day-of-week pattern
@@ -209,8 +209,16 @@ export default function Planning() {
         if (!res.ok) throw new Error(await res.text())
       }
 
-      setStatus(ftpTestDays.length > 0 ? 'FTP test scheduled + workouts generated!' : 'Workouts generated!')
-      setFtpTestDue(p => p ? { ...p, due: ftpTestDays.length > 0 ? false : p.due } : p)
+      await fetch('/trainiq/planning/commutes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          week_start: format(weekStart, 'yyyy-MM-dd'),
+          day_settings: daySettings,
+        }),
+      })
+
+      setStatus(ftpTestDays.length > 0 ? 'FTP test scheduled + workouts generated!' : 'Workouts generated!')      setFtpTestDue(p => p ? { ...p, due: ftpTestDays.length > 0 ? false : p.due } : p)
       await loadWorkouts()
     } catch (e) {
       setStatus(`Error: ${e.message}`)
