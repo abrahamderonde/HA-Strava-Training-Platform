@@ -218,7 +218,7 @@ export default function Planning() {
         }),
       })
 
-      setStatus(ftpTestDays.length > 0 ? 'FTP test scheduled + workouts generated!' : 'Workouts generated!')      setFtpTestDue(p => p ? { ...p, due: ftpTestDays.length > 0 ? false : p.due } : p)
+      setStatus(ftpTestDays.length > 0 ? 'FTP test scheduled + workouts generated!' : 'Workouts generated!')      setFtpTestDue(p => p ? { ...p, due: ftpTestDays.length > 0 ? false : p.due } : p)}
       await loadWorkouts()
     } catch (e) {
       setStatus(`Error: ${e.message}`)
