@@ -62,11 +62,12 @@ export default function PowerCurve() {
   const [loading, setLoading] = useState(true)
   const [weight, setWeight] = useState(70)
   const [showIdeal, setShowIdeal] = useState(true)
+  const [workKj, setWorkKj] = useState(0)
 
   useEffect(() => {
     const load = async () => {
       try {
-        const curveRes = await fetch('/trainiq/analytics/power-curve')
+        const curveRes = await fetch(`/trainiq/analytics/power-curve?work_kj=${workKj}`)
         const curveData = curveRes.ok ? await curveRes.json() : {}
         // Backward-compatible: older API shape was a bare array
         const actualRaw = Array.isArray(curveData) ? curveData : (curveData.actual || [])
@@ -110,7 +111,7 @@ export default function PowerCurve() {
       setLoading(false)
     }
     load()
-  }, [weight])
+  }, [weight, workKj])
 
   const currentCp  = ftp?.cp  || ftp?.ftp || 0
   const currentFtp = ftp?.ftp || 0
@@ -266,6 +267,20 @@ export default function PowerCurve() {
               {showIdeal ? '✓' : ''} Ideal curve
             </button>
           </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', marginRight: 4 }}>Durability:</span>
+            {[0, 1000, 2000].map(kj => (
+              <button key={kj} onClick={() => setWorkKj(kj)}
+                style={{
+                  padding: '3px 10px', borderRadius: 12, border: '1px solid', fontSize: 12, cursor: 'pointer',
+                  borderColor: workKj === kj ? 'var(--accent)' : 'var(--border)',
+                  background: workKj === kj ? 'rgba(249,115,22,0.15)' : 'transparent',
+                  color: workKj === kj ? 'var(--accent)' : 'var(--muted)',
+                }}>
+                {kj === 0 ? 'Fresh' : `After ${kj} kJ`}
+              </button>
+            ))}
+          </div>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={curve} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -309,7 +324,7 @@ export default function PowerCurve() {
                 name="Actual"
                 connectNulls
               />
-              {showIdeal && (
+              {showIdeal && workKj === 0 && (
                 <Line
                   type="monotone"
                   dataKey="idealPower"

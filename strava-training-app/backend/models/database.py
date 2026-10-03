@@ -40,6 +40,7 @@ async def init_db():
             "ALTER TABLE planned_workouts ADD COLUMN actual_duration_minutes INTEGER DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_activity_id INTEGER DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN garmin_schedule_id INTEGER DEFAULT NULL",
+            "ALTER TABLE power_curve ADD COLUMN work_kj INTEGER DEFAULT 0",
         ]
         for sql in migrations:
             try:
@@ -102,6 +103,7 @@ class PowerCurve(Base):
     activity_id = Column(Integer)
     activity_date = Column(DateTime)
     updated_at = Column(DateTime)
+    work_kj = Column(Integer, default=0, index=True)
 
 
 class FTPEstimate(Base):

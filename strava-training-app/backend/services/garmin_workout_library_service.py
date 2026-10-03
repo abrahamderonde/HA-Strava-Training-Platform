@@ -74,8 +74,9 @@ class GarminWorkoutLibraryService:
 
     def _step_power(self, step: Dict[str, Any]) -> Tuple[Optional[int], Optional[int]]:
         target = step.get("targetType") or {}
-        if target.get("workoutTargetTypeKey") == "power.zone":
-            low, high = target.get("targetValueOne"), target.get("targetValueTwo")
+        target_key = (target.get("workoutTargetTypeKey") or "")
+        if target_key.startswith("power."):
+            low, high = step.get("targetValueOne"), step.get("targetValueTwo")
             return (int(low) if low else None, int(high) if high else None)
         return (None, None)
 

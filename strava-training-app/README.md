@@ -11,7 +11,7 @@ Inspired by intervals.icu + Join.cc, fully under your own control.
 - **Strava import** — legacy import path; Strava's API now requires a paid subscription, use Garmin for new imports
 - **Calendar view** — monthly overview of completed activities and planned workouts, including manual FTP/weight entry
 - **Performance Management Chart (PMC)** — CTL (fitness), ATL (fatigue), TSB (form) using the Banister impulse-response model, including a forward projection based on planned workouts
-- **Power Curve** — Mean Maximal Power across all standard durations from the last 60 days
+- **Power Curve** — Mean Maximal Power across all standard durations from last 60 days, with durability filters (fresh, after 1000 kJ, after 2000 kJ of work)
 - **FTP Estimation** — 3-parameter Critical Power model (Morton, 1996): P(t) = W'/t + CP + (Pmax−CP)·e^(−t/τ), FTP = CP; kept separate from the manually-set FTP
 - **TSS Calculation** — Power-based TSS with NP/IF (only when the power data is usable); hrTSS when power is missing or faulty; duration/sport estimate when neither exists
 - **Training Goals & AI Planning** — Claude generates a phased training plan and detailed weekly workouts based on fitness, fatigue, and goal

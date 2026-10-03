@@ -401,35 +401,43 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
     if not activities_with_power:
         return
 
-    # Build merged power curve
-    curves = []
-    for act in activities_with_power:
-        if act.power_stream:
-            curve = build_power_curve(act.power_stream)
-            if curve:
-                curves.append(curve)
+    from .services.training_science import build_power_curve_after_work, DURABILITY_LEVELS_KJ
 
-    if not curves:
+    curves_by_level: Dict[int, list] = {kj: [] for kj in DURABILITY_LEVELS_KJ}
+    for act in activities_with_power:
+        if not act.power_stream:
+            continue
+        for kj in DURABILITY_LEVELS_KJ:
+            curve = build_power_curve_after_work(act.power_stream, kj)
+            if curve:
+                curves_by_level[kj].append(curve)
+
+    if not curves_by_level[0]:
         return
 
-    merged = merge_power_curves(curves)
+    merged = merge_power_curves(curves_by_level[0])
 
-    # Upsert power curve entries
-    for dur, power in merged.items():
-        result = await db.execute(
-            select(PowerCurve).where(PowerCurve.duration_seconds == dur)
-        )
-        pc = result.scalar_one_or_none()
-        if pc:
-            pc.best_power = power
-            pc.updated_at = datetime.now()
-        else:
-            pc = PowerCurve(
-                duration_seconds=dur,
-                best_power=power,
-                updated_at=datetime.now(),
-            )
-            db.add(pc)
+    for kj, level_curves in curves_by_level.items():
+        level_merged = merge_power_curves(level_curves) if level_curves else {}
+        rows = (await db.execute(
+            select(PowerCurve).where(PowerCurve.work_kj == kj)
+        )).scalars().all()
+        existing_by_dur = {r.duration_seconds: r for r in rows}
+        for dur, power in level_merged.items():
+            pc = existing_by_dur.get(dur)
+            if pc:
+                pc.best_power = power
+                pc.updated_at = datetime.now()
+            else:
+                db.add(PowerCurve(
+                    duration_seconds=dur,
+                    best_power=power,
+                    work_kj=kj,
+                    updated_at=datetime.now(),
+                ))
+        for dur, pc in existing_by_dur.items():
+            if dur not in level_merged:
+                await db.delete(pc)
 
     await db.commit()
 
@@ -1436,53 +1444,41 @@ async def get_pmc(days: int = 120, db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/trainiq/analytics/power-curve")
-async def get_power_curve(db: AsyncSession = Depends(get_db)):
-    from .services.training_science import _cp3_model
+async def get_power_curve(work_kj: int = 0, db: AsyncSession = Depends(get_db)) -> Dict:
+    from .services.training_science import _cp3_model, DURABILITY_LEVELS_KJ
     import numpy as np
 
     result = await db.execute(
-        select(PowerCurve).order_by(PowerCurve.duration_seconds)
+        select(PowerCurve)
+        .where(PowerCurve.work_kj == work_kj)
+        .order_by(PowerCurve.duration_seconds)
     )
     rows = result.scalars().all()
     actual = [{"duration": r.duration_seconds, "power": r.best_power} for r in rows]
 
-    # Fetch latest CP model fit to generate the "ideal" theoretical curve
     ftp_result = await db.execute(
         select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
     )
     ftp_est = ftp_result.scalar_one_or_none()
 
     ideal = []
-    if ftp_est and ftp_est.cp and ftp_est.w_prime and ftp_est.p_max:
+    if work_kj == 0 and ftp_est and ftp_est.cp and ftp_est.w_prime and ftp_est.p_max:
         method = getattr(ftp_est, "estimation_method", "multi_point")
-
-        # The W'/t term in the CP3 model blows up at very short durations —
-        # it's only meant to model the 1-20min "anaerobic reserve above CP"
-        # region, not true sprint power. This is especially true when W'/Pmax
-        # came from the single-effort method (fixed defaults, not fitted to
-        # actual short-duration data). Restrict the curve to the range the
-        # model is actually valid for for that estimation method.
         if method == "single_effort":
-            # Single-effort params are only meaningful in roughly the range
-            # the source effort came from — don't extrapolate to sprints
             durations = [60, 90, 120, 180, 240, 300, 420, 600, 900, 1200, 1800]
         else:
             durations = [15, 20, 30, 45, 60, 90, 120, 180, 240, 300,
                          420, 600, 900, 1200, 1800, 2400, 3600]
 
         t = np.array(durations, dtype=float)
-        p_ideal = _cp3_model(t, ftp_est.cp, ftp_est.w_prime, ftp_est.p_max)
-
-        # Hard physiological ceiling regardless of model output — even elite
-        # track sprinters rarely exceed ~2500W peak; this is a safety net for
-        # any parameter combination that produces an unrealistic extrapolation
-        p_ideal = np.minimum(p_ideal, 2000.0)
-
+        p_ideal = np.minimum(_cp3_model(t, ftp_est.cp, ftp_est.w_prime, ftp_est.p_max), 2000.0)
         ideal = [{"duration": d, "power": round(float(p), 1)} for d, p in zip(durations, p_ideal)]
 
     return {
         "actual": actual,
         "ideal": ideal,
+        "work_kj": work_kj,
+        "levels": DURABILITY_LEVELS_KJ,
         "cp": ftp_est.cp if ftp_est else None,
         "w_prime": ftp_est.w_prime if ftp_est else None,
         "p_max": ftp_est.p_max if ftp_est else None,
@@ -1573,7 +1569,7 @@ async def power_stats(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/trainiq/analytics/pmc-future")
-async def get_pmc_future(days: int = 60, db: AsyncSession = Depends(get_db)):
+async def get_pmc_future(days: int = 14, db: AsyncSession = Depends(get_db)):
     """Project future CTL/ATL/TSB based on planned workouts.
     Returns both past (last 30 days) and future (next N days) for seamless chart overlay."""
     import math
@@ -1753,7 +1749,9 @@ async def cp_fit_detail(db: AsyncSession = Depends(get_db)):
     without_stream_acts = without_stream.scalars().all()
 
     # Current power curve datapoints actually used for the fit
-    pc_result = await db.execute(select(PowerCurve).order_by(PowerCurve.duration_seconds))
+    pc_result = await db.execute(
+        select(PowerCurve).where(PowerCurve.work_kj == 0).order_by(PowerCurve.duration_seconds)
+    )
     pc_rows = pc_result.scalars().all()
     power_curve = {r.duration_seconds: r.best_power for r in pc_rows}
 

@@ -236,6 +236,17 @@ def build_power_curve(power_stream: List[float]) -> Dict[int, float]:
             results[dur] = round(mmp, 1)
     return results
 
+DURABILITY_LEVELS_KJ: List[int] = [0, 1000, 2000]
+
+def build_power_curve_after_work(power_stream: List[float], work_kj: int) -> Dict[int, float]:
+    if work_kj <= 0:
+        return build_power_curve(power_stream)
+    arr = np.nan_to_num(np.array(power_stream, dtype=float), nan=0.0)
+    cumulative_kj = np.cumsum(arr) / 1000.0
+    start_idx = int(np.searchsorted(cumulative_kj, float(work_kj)))
+    if start_idx >= len(arr):
+        return {}
+    return build_power_curve(arr[start_idx:].tolist())
 
 def merge_power_curves(curves: List[Dict[int, float]]) -> Dict[int, float]:
     """Merge multiple power curves, keeping the best (highest) value per duration."""

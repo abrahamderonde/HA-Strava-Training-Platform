@@ -9,7 +9,7 @@
 Full documentation: [Strava Training Platform](./strava-training-app)
 
 ## Features
-📊 Training Analytics — PMC, power curve, FTP estimation
+📊 Training Analytics (PMC, power curve incl. durability after 1000/2000 kJ)
 
 ⌚ Garmin Connect sync (Strava import is deprecated; only legacy data remains usable)
 

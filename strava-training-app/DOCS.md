@@ -125,11 +125,19 @@ TrainIQ periodically syncs all cycling workouts from your Garmin workout templat
 
 Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page.
 
+---
+
 ## 10. Municipality Map (Gemeenten)
 
 The gemeente map loads Dutch municipal boundaries from [PDOK](https://www.pdok.nl) (Dutch government open geodata) the first time you open that page. This download is cached locally — it only happens once.
 
 After your Strava history is imported, go to **Gemeenten** → **Re-scan activities** to detect which municipalities your rides have passed through.
+
+---
+
+## 11. Power Curve Durability
+
+The Power page can filter the power curve to the part of each ride after 1000 or 2000 kJ of accumulated work, showing how much power you can still produce when fatigued. These curves are calculated nightly (or via **Recalculate**) from the stored power streams of the last 60 days. CP/FTP estimation and the ideal curve always use the fresh (0 kJ) curve.
 
 ---
 
