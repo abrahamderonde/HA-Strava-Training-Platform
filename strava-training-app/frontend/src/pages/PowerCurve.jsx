@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine
@@ -63,6 +63,7 @@ export default function PowerCurve() {
   const [weight, setWeight] = useState(70)
   const [showIdeal, setShowIdeal] = useState(true)
   const [workKj, setWorkKj] = useState(0)
+  const axisRef = useRef({ durations: [], yMin: null, yMax: null })
 
   useEffect(() => {
     const load = async () => {
@@ -84,6 +85,23 @@ export default function PowerCurve() {
           if (!byDuration[d.duration]) byDuration[d.duration] = { duration: d.duration }
           byDuration[d.duration].idealPower = d.power
         })
+
+        if (workKj === 0) {
+          const powers = Object.values(byDuration)
+            .flatMap(d => [d.power, d.idealPower])
+            .filter(Number.isFinite)
+          if (powers.length > 0) {
+            axisRef.current = {
+              durations: Object.keys(byDuration).map(Number),
+              yMin: Math.floor((Math.min(...powers) * 0.95) / 50) * 50,
+              yMax: Math.ceil((Math.max(...powers) * 1.05) / 50) * 50,
+            }
+          }
+        } else {
+          axisRef.current.durations.forEach(d => {
+            if (!byDuration[d]) byDuration[d] = { duration: d }
+          })
+        }
 
         const merged = Object.values(byDuration)
           .sort((a, b) => a.duration - b.duration)
@@ -294,7 +312,10 @@ export default function PowerCurve() {
                 tick={{ fill: 'var(--muted)', fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
-                domain={['auto', 'auto']}
+                domain={axisRef.current.yMax != null
+                  ? [axisRef.current.yMin, axisRef.current.yMax]
+                  : ['auto', 'auto']}
+                allowDataOverflow
                 unit="W"
               />
               <Tooltip content={<CustomTooltip />} />

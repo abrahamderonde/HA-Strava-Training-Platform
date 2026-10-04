@@ -120,6 +120,7 @@ async def nightly_recalculate():
     """Nightly job: recalculate PMC and update power curve/FTP."""
     from .models.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
+        await _auto_complete_commutes(db)
         await recalculate_pmc(db)
         await recalculate_power_curve_and_ftp(db)
 
@@ -339,6 +340,67 @@ async def delete_workout_library_entry(entry_id: int, db: AsyncSession = Depends
     await db.delete(entry)
     await db.commit()
     return {"status": "deleted"}
+
+async def _auto_complete_commutes(db: AsyncSession) -> int:
+    pending_result = await db.execute(
+        select(PlannedWorkout)
+        .where(PlannedWorkout.workout_type == "commute")
+        .where(PlannedWorkout.completed.is_(None))
+        .where(PlannedWorkout.date <= datetime.now())
+    )
+    pending: list[PlannedWorkout] = list(pending_result.scalars().all())
+    if not pending:
+        return 0
+
+    ftp: float = await get_current_ftp(db)
+    for w in pending:
+        day_start: datetime = w.date.replace(hour=0, minute=0, second=0, microsecond=0)
+        real_result = await db.execute(
+            select(func.coalesce(func.sum(Activity.tss), 0.0))
+            .where(Activity.commute == True)
+            .where(Activity.synthetic == False)
+            .where(Activity.start_date >= day_start)
+            .where(Activity.start_date < day_start + timedelta(days=1))
+        )
+        real_tss: float = float(real_result.scalar() or 0.0)
+        planned_tss: float = float(w.target_tss or 0.0)
+        duration_min: int = int(w.target_duration_minutes or 0)
+
+        w.completed = True
+        w.actual_duration_minutes = duration_min or None
+        if real_tss > 0:
+            w.actual_tss = round(real_tss, 1)
+            continue
+
+        w.actual_tss = planned_tss
+        if planned_tss <= 0 or duration_min <= 0:
+            continue
+        if_val: float = float(w.target_if or 0.65)
+        activity = Activity(
+            strava_id=None,
+            name=w.title,
+            sport_type="Ride",
+            start_date=w.date,
+            elapsed_time=duration_min * 60,
+            moving_time=duration_min * 60,
+            distance=0,
+            average_watts=if_val * ftp,
+            weighted_avg_watts=round(if_val * ftp * 1.05),
+            np=round(if_val * ftp * 1.05),
+            tss=planned_tss,
+            has_power=True,
+            trainer=False,
+            commute=True,
+            synthetic=True,
+        )
+        db.add(activity)
+        await db.flush()
+        w.actual_activity_id = activity.id
+
+    await db.commit()
+    await recalculate_pmc(db)
+    logger.info("Auto-completed %d planned commute(s)", len(pending))
+    return len(pending)
 
 async def recalculate_pmc(db: AsyncSession):
     """Recalculate PMC (CTL/ATL/TSB) from all activities."""
@@ -2055,6 +2117,8 @@ async def get_calendar_activities(
     else:
         end = datetime(year, month + 1, 1)
 
+    await _auto_complete_commutes(db)
+
     result = await db.execute(
         select(Activity)
         .where(Activity.start_date >= start)
@@ -2062,6 +2126,8 @@ async def get_calendar_activities(
         .order_by(Activity.start_date)
     )
     activities = result.scalars().all()
+
+    # Also get planned workouts for this month
 
     # Also get planned workouts for this month
     pw_result = await db.execute(
@@ -2082,6 +2148,9 @@ async def get_calendar_activities(
                 "target_tss": p.target_tss,
                 "target_duration_minutes": p.target_duration_minutes,
                 "exported_to_garmin": p.exported_to_garmin,
+                "completed": p.completed,
+                "actual_tss": p.actual_tss,
+                "actual_duration_minutes": p.actual_duration_minutes,
             }
             for p in planned
         ],
@@ -2572,9 +2641,10 @@ async def mark_workout(workout_id: int, request: Request, db: AsyncSession = Dep
     """Mark a planned workout as completed or skipped, optionally with adjusted TSS/duration.
     Creates a synthetic activity when marked done."""
     data = await request.json()
-    completed = data.get("completed")          # True = done, False = skipped
-    actual_tss = data.get("actual_tss")        # override if different from plan
+    completed = data.get("completed")
+    actual_tss = data.get("actual_tss")
     actual_duration = data.get("actual_duration_minutes")
+    logger.info("Mark workout %s: completed=%s tss=%s dur=%s", workout_id, completed, actual_tss, actual_duration)
 
     result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
     workout = result.scalar_one_or_none()
