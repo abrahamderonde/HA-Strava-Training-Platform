@@ -36,6 +36,7 @@ from .services.training_science import (
     merge_power_curves, POWER_CURVE_DURATIONS, get_power_zones
 )
 from .services.gemeente_service import GemeenteService
+from .services.mqtt_service import MqttService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -92,10 +93,16 @@ async def lifespan(app: FastAPI):
         id="nightly_workout_library_sync"
     )
     scheduler.start()
+    mqtt_service = MqttService(CONFIG, handle_mqtt_command)
+    mqtt_task = asyncio.create_task(mqtt_service.run())
     logger.info("Strava Training Platform started")
     yield
+    mqtt_task.cancel()
+    try:
+        await mqtt_task
+    except asyncio.CancelledError:
+        pass
     scheduler.shutdown()
-
 
 app = FastAPI(
     title="Strava Training Platform",
@@ -218,26 +225,34 @@ async def _recover_missing_power(db: AsyncSession, svc: GarminImportService, day
     return recovered
 
 
-async def nightly_garmin_sync():
-    """Nightly job: import recent Garmin activities, then retry power fetch
-    for any activities Garmin hadn't finished processing yet at import time."""
+async def run_garmin_sync(days: int) -> Dict[str, Any]:
     from .models.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
-        try:
-            ftp = await get_current_ftp(db)
-            svc = GarminImportService(
-                CONFIG.get("garmin_email", ""),
-                CONFIG.get("garmin_password", ""),
-                db,
-                ftp=ftp,
-            )
-            result = await svc.import_recent(days=2)
-            logger.info("Nightly Garmin sync: %s", result)
-            recovered = await _recover_missing_power(db, svc, days=2)
-            if recovered:
-                logger.info("Nightly Garmin sync: recovered power for %d activities", recovered)
-        except Exception as e:
-            logger.error("Nightly Garmin sync failed: %s", e)
+        ftp = await get_current_ftp(db)
+        svc = GarminImportService(
+            CONFIG.get("garmin_email", ""),
+            CONFIG.get("garmin_password", ""),
+            db,
+            ftp=ftp,
+        )
+        result = await svc.import_recent(days=days)
+        if result.get("imported", 0) > 0:
+            await recalculate_pmc(db)
+        return result
+
+
+async def handle_mqtt_command(command: str) -> Dict[str, Any]:
+    if command == "fetch_latest":
+        return await run_garmin_sync(days=2)
+    raise ValueError(f"Unknown command: {command}")
+
+
+async def nightly_garmin_sync() -> None:
+    try:
+        result = await run_garmin_sync(days=2)
+        logger.info("Nightly Garmin sync: %s", result)
+    except Exception as e:
+        logger.error("Nightly Garmin sync failed: %s", e)
 
 async def nightly_workout_library_sync():
     from .models.database import AsyncSessionLocal

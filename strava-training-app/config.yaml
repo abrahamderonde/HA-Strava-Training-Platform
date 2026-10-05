@@ -1,6 +1,8 @@
 name: "Strava Training Platform"
 description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
-version: "0.2.61"
+version: "0.2.62"
+services:
+  - mqtt:want
 slug: "strava_training"
 init: false
 arch:
@@ -23,6 +25,10 @@ options:
   anthropic_api_key: ""
   intervals_api_key: ""
   intervals_athlete_id: ""
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
   athlete_weight_kg: 70
   ftp_initial: 200
 schema:
@@ -31,6 +37,10 @@ schema:
   anthropic_api_key: str
   intervals_api_key: str
   intervals_athlete_id: str
+  mqtt_host: str?
+  mqtt_port: int?
+  mqtt_username: str?
+  mqtt_password: password?
   athlete_weight_kg: int
   ftp_initial: int
 panel_icon: mdi:bike-fast
