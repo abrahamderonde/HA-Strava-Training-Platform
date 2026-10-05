@@ -2,52 +2,52 @@
 
 ---
 
-## 1. Eddington map upgrades
+## 1. Ride Stats & Detailed Analysis
 
-**Effort:** Low
-**Status:** implemented 11-06 - testing - seems finished
-**Notes:**: Count logic tweak
+**Effort:** High  
+**Status:** Pending  
 
-**progress bar**
-- show progress from last mile stone. So if you are at 90 and you need 3 rides of 91+ km to reach 91, the progress is 0/3 1/3 2/3 etc.
+### Feature Overview
+Implement single-ride analytics by processing stream data (time, watts, HR, cadence, alt). Display high-level summary metrics directly in the Calendar/Dashboard, with a dedicated Ride Detail view/modal for deep-dive metrics.
 
----
+### A. Quick Stats (Calendar & Dashboard)
+Show a compact summary card per ride with non-redundant core metrics:
+- **Duration / TSS / Kilojoules (kJ)**
+- **Variability Index (VI)**
+- **Aerobic Decoupling**  EF2 vs EF1 (% change)
+  Formula: (1 - (EF_hour2 / EF_hour1)) * 100
+  - Applies to: Rides >= 2 hours moving time
+  - Short rides (< 2h): Show 'N/A'
+  - Indicator: 🟢 < 1.5% | 🟡 1.5% - 3.0% | 🔴 > 3.0%
 
-## 4. FTP Testing
+### B. Detailed Ride Analysis View
+Accessible by clicking a ride in the Calendar or Dashboard.
 
-**Effort:** low
-**Status:** implemented - testing - seems finished
+#### 1. Pacing & Intensity
+- **Variability Index (VI)** (`NP / AP`)
+- **Intensity Factor (IF)** (`NP / FTP`)
+- **Work / Energy per Zone** (Table & Bar chart of total kJ per Power Zone)
 
-**FTP testing**
-- I will give you the template workout with steps
-- recommendate to do every 2 months
-- Show on planning page in red that FTP test is due
-- Make indoor/outdoor toggle a indoor/outdoor/FTP selector
+#### 2. Aerobic Condition & Fatigue (Durability)
+- **Aerobic Decoupling (Pwr:HR Drift):**
+  - Calculate drift **per hour** (rate of decoupling)
+  - **Filter rules:** Exclude warmup (first 10 min) and exclude pauses/stops (`moving_time` only)
+  - **Thresholds:** 🟢 `<1.5%/h` (Great) | 🟡 `1.5–3.0%/h` (Moderate) | 🔴 `>3.0%/h` (High fatigue)
+- **Efficiency Factor (EF) Trend:**
+  - Hourly EF breakdown (`NP_hour / Avg_HR_hour`)
 
----
+#### 3. Anaerobic Battery
+- **W' Balance Dynamic Curve:**
+  - Real-time depletion & recovery tracking of W' (Skiba model)
 
-## 5. PMC upgrades
+#### 4. Auto Ride Segmentation & Detection
+- **Auto-Interval Detection:**
+  - Auto-detect sustained efforts (e.g., >3 min at >90% FTP). Show NP, Cadence, HR, and EF for each segment.
+- **Climb Detection:**
+  - Auto-detect climb segments (`gradient > 3%` AND `elevation gain > 10m`).
+  - Calculate: Length (km), Elevation Gain (m), VAM (m/h), Average W/kg.
 
-**Effort:** low
-**Status:** implemented - testing
-**Notes** Math is straightforward, UI needs work
-
-**Show planning / future**
-- show future PMC curve based on detailed and global workout planning
-
----
-
-## 6. Power curve 'ideal' overlay
-
-**Effort:** Medium / high
-**Status:** implemented - testing
-**Notes:** CP model already there, needs curve math
-
-Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you could do, based on your power curve.
-  
----
-
-## 7. General cleanup
+## 2. General cleanup
 
 **Effort:** low
 **Status:** Pending
@@ -55,35 +55,10 @@ Add 'ideal' curve, so you have an impression what 2min, or 5min efforts you coul
 - Cleanup all strava buttons / strava references / strava settings (as no strava import exists anymore)
 - cleanup all repair / check buttons. Perhaps move them to a debug page, which can be accessed from settings.
 - Hide historical commute generator from side bar. This can be moved to debug page. This is only an initial repair for the database.
-- 
 
 ---
 
-## 8. Merge NL challenge page with check GPX page. 
-
-**Effort:** Medium
-**Status:** finished. 
-
-- always have a field to drop the GPX.
-- Use the filters per year / all, to go back to normal views. 
-
----
-
-## 9. Gui improvements for mobile
-
-**Effort:** Medium - High
-**Status:** implemented - testing
-
-**GUI improvements for mobile**
-- On mobile the pages don't show up very nicely.
-- Bottom bar instead of side bar in mobile.
-
-**TODO**
-- check per page if current status is sufficient. 
-
----
-
-## 10. Equipment / Gear Tracking
+## 3. Equipment / Gear Tracking
 
 **Effort:** high
 **Status:** Pending
