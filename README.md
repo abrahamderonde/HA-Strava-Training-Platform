@@ -21,6 +21,8 @@ Full documentation: [Strava Training Platform](./strava-training-app)
 
 🤖 AI Workout generation
 
+🔬 Ride analysis (VI, aerobic decoupling, W' balance, interval and climb detection)
+
 📚 Workout Library (Garmin sync)
 
 ---

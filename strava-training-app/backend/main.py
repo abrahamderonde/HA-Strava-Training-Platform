@@ -17,7 +17,7 @@ from sqlalchemy import select, func, or_
 from datetime import date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Optional, Set
 from fastapi import UploadFile, File
 from .models.database import (
     init_db, get_db, Activity, TrainingMetrics, PowerCurve,
@@ -36,6 +36,7 @@ from .services.training_science import (
     merge_power_curves, POWER_CURVE_DURATIONS, get_power_zones
 )
 from .services.gemeente_service import GemeenteService
+from .services.ride_analysis import DEFAULT_W_PRIME, analyse_ride, compute_quick_stats
 from .services.mqtt_service import MqttService
 
 logging.basicConfig(level=logging.INFO)
@@ -2112,7 +2113,7 @@ async def get_activities(
     query = query.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     activities = result.scalars().all()
-    return [_activity_to_dict(a) for a in activities]
+    return [_activity_to_dict(a, include_quick=True) for a in activities]
 
 
 @app.get("/trainiq/activities/calendar")
@@ -2153,7 +2154,7 @@ async def get_calendar_activities(
     planned = pw_result.scalars().all()
 
     return {
-        "activities": [_activity_to_dict(a) for a in activities],
+        "activities": [_activity_to_dict(a, include_quick=True) for a in activities],
         "planned": [
             {
                 "id": p.id,
@@ -3165,8 +3166,8 @@ async def get_weight_at_date(db: AsyncSession, target_date: datetime) -> float:
     return float(CONFIG.get("athlete_weight_kg", 70))
 
 
-def _activity_to_dict(a: Activity) -> Dict:
-    return {
+def _activity_to_dict(a: Activity, include_quick: bool = False) -> Dict[str, Any]:
+    data: Dict[str, Any] = {
         "id": a.id,
         "strava_id": a.strava_id,
         "name": a.name,
@@ -3190,7 +3191,114 @@ def _activity_to_dict(a: Activity) -> Dict:
         "np": a.np,
         "if_": a.if_,
         "kilojoules": a.kilojoules,
+        "has_streams": bool(a.power_stream),
+        "quick": None,
     }
+    if include_quick:
+        data["quick"] = compute_quick_stats(
+            a.power_stream,
+            a.hr_stream,
+            a.moving_stream,
+            a.moving_time,
+            a.tss,
+            a.average_watts,
+            a.kilojoules,
+        )
+    return data
+
+
+@app.get("/trainiq/activities/{activity_id}/analysis")
+async def get_activity_analysis(activity_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    ftp = await get_ftp_at_date(db, activity.start_date)
+    weight = await get_weight_at_date(db, activity.start_date)
+    estimate_result = await db.execute(
+        select(FTPEstimate).order_by(FTPEstimate.estimated_at.desc()).limit(1)
+    )
+    estimate = estimate_result.scalar_one_or_none()
+    cp = float(estimate.cp) if estimate and estimate.cp else ftp
+    w_prime = float(estimate.w_prime) if estimate and estimate.w_prime else DEFAULT_W_PRIME
+
+    analysis = await asyncio.to_thread(
+        analyse_ride,
+        activity.power_stream,
+        activity.hr_stream,
+        activity.cadence_stream,
+        activity.altitude_stream,
+        activity.distance_stream,
+        activity.moving_stream,
+        ftp,
+        cp,
+        w_prime,
+        weight,
+    )
+    return {
+        "activity": _activity_to_dict(activity, include_quick=True),
+        "ftp": round(ftp),
+        "weight_kg": weight,
+        "analysis": analysis,
+    }
+
+
+@app.post("/trainiq/garmin/backfill-streams")
+async def garmin_backfill_streams(background_tasks: BackgroundTasks, days: int = 365) -> Dict[str, str]:
+    async def _backfill() -> None:
+        from .models.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            ftp = await get_current_ftp(db)
+            svc = GarminImportService(
+                CONFIG.get("garmin_email", ""),
+                CONFIG.get("garmin_password", ""),
+                db,
+                ftp=ftp,
+            )
+            client = await svc._get_client()
+            if not client:
+                logger.error("Backfill streams: could not authenticate")
+                return
+
+            cutoff = datetime.now() - timedelta(days=days)
+            result = await db.execute(
+                select(Activity)
+                .where(Activity.strava_id < 0)
+                .where(Activity.trainer == False)
+                .where(Activity.moving_stream.is_(None))
+                .where(Activity.start_date >= cutoff)
+                .order_by(Activity.start_date.desc())
+            )
+            activities: List[Activity] = list(result.scalars().all())
+            total = len(activities)
+            logger.info("Backfilling ride streams for %d Garmin activities", total)
+
+            updated = 0
+            for i, a in enumerate(activities):
+                streams = await svc._fetch_streams(client, abs(a.strava_id))
+                if streams:
+                    watts = streams.pop("watts", None)
+                    if watts:
+                        a.power_stream = watts
+                    a.hr_stream = streams.get("hr")
+                    a.cadence_stream = streams.get("cadence")
+                    a.altitude_stream = streams.get("altitude")
+                    a.distance_stream = streams.get("distance")
+                    a.moving_stream = streams.get("moving")
+                    updated += 1
+                await asyncio.sleep(1.5)
+                if (i + 1) % 25 == 0:
+                    await db.commit()
+                    logger.info("Stream backfill progress: %d/%d (updated=%d)", i + 1, total, updated)
+
+            await db.commit()
+            logger.info("Stream backfill complete: %d/%d activities updated", updated, total)
+            await recalculate_power_curve_and_ftp(db)
+
+    background_tasks.add_task(_backfill)
+    return {"status": f"Stream backfill started for last {days} days — check logs for progress"}
 
 
 

@@ -5,7 +5,7 @@
 ## 1. Ride Stats & Detailed Analysis
 
 **Effort:** High  
-**Status:** Pending  
+**Status:** implemented - testing
 
 ### Feature Overview
 Implement single-ride analytics by processing stream data (time, watts, HR, cadence, alt). Display high-level summary metrics directly in the Calendar/Dashboard, with a dedicated Ride Detail view/modal for deep-dive metrics.

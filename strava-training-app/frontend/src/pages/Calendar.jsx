@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval,
          startOfWeek, endOfWeek, isSameMonth, isToday } from 'date-fns'
 import { ChevronLeft, ChevronRight, Check, X, RotateCcw, Plus } from 'lucide-react'
+import RideDetail, { QuickStats } from '../components/RideDetail'
 
 const SPORT_PILL = type => {
   if (['Ride','VirtualRide','EBikeRide','MountainBikeRide','GravelRide'].includes(type)) return 'pill-ride'
@@ -359,6 +360,7 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showAddPanel, setShowAddPanel] = useState(false)
+  const [rideId, setRideId] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -414,6 +416,7 @@ export default function Calendar() {
 
   return (
     <div>
+      {rideId && <RideDetail activityId={rideId} onClose={() => setRideId(null)} />}
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{ flex: 1 }}>
           <h1 className="page-title">Training Calendar</h1>
@@ -581,20 +584,16 @@ export default function Calendar() {
                           background: 'var(--bg)', padding: '2px 5px', borderRadius: 3 }}>synthetic</span>}
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                      {[
-                        ['Time', `${Math.round(a.moving_time / 60)}min`],
-                        a.distance > 0 && ['Dist', formatDistance(a.distance)],
-                        a.average_watts && ['Power', `${a.average_watts?.toFixed(0)}W`],
-                        a.tss && ['TSS', `${a.tss?.toFixed(0)}${a.tss_source === 'rpe' ? ' (RPE)' : ''}`],
-                        a.average_heartrate && ['HR', `${a.average_heartrate?.toFixed(0)}bpm`],
-                      ].filter(Boolean).map(([label, value]) => (
-                        <div key={label}>
-                          <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase' }}>{label}</div>
-                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
+                    <QuickStats quick={a.quick} />
+                    {a.has_streams && (
+                      <button
+                        onClick={() => setRideId(a.id)}
+                        style={{ marginTop: 8, width: '100%', padding: '5px 0', borderRadius: 4,
+                                 background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6',
+                                 color: '#3b82f6', fontSize: 12, cursor: 'pointer' }}>
+                        📈 Ride analysis
+                      </button>
+                    )}
                     {/* Action buttons */}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       {!a.average_watts && !a.average_heartrate && (

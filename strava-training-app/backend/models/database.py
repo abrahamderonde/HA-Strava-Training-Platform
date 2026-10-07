@@ -41,6 +41,10 @@ async def init_db():
             "ALTER TABLE planned_workouts ADD COLUMN actual_activity_id INTEGER DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN garmin_schedule_id INTEGER DEFAULT NULL",
             "ALTER TABLE power_curve ADD COLUMN work_kj INTEGER DEFAULT 0",
+            "ALTER TABLE activities ADD COLUMN cadence_stream JSON",
+            "ALTER TABLE activities ADD COLUMN altitude_stream JSON",
+            "ALTER TABLE activities ADD COLUMN distance_stream JSON",
+            "ALTER TABLE activities ADD COLUMN moving_stream JSON",
         ]
         for sql in migrations:
             try:
@@ -83,6 +87,10 @@ class Activity(Base):
     synthetic = Column(Boolean, default=False)  # True = generated, not from Strava
     power_stream = Column(JSON, nullable=True)
     hr_stream = Column(JSON, nullable=True)
+    cadence_stream = Column(JSON(none_as_null=True), nullable=True)
+    altitude_stream = Column(JSON(none_as_null=True), nullable=True)
+    distance_stream = Column(JSON(none_as_null=True), nullable=True)
+    moving_stream = Column(JSON(none_as_null=True), nullable=True)
     latlng_stream = Column(JSON, nullable=True)   # [[lat,lon], ...]
     # GPS track as list of [lat, lon] pairs for municipality detection
     latlng_stream = Column(JSON, nullable=True)

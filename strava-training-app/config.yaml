@@ -1,6 +1,6 @@
 name: "Strava Training Platform"
-description: "Self-hosted cycling training platform with Strava sync, PMC, power curves, FTP estimation and AI workout planning"
-version: "0.2.62"
+description: "Self-hosted cycling training platform with Garmin sync, PMC, power curves, FTP estimation and AI workout planning"
+version: "0.3.0"
 services:
   - mqtt:want
 slug: "strava_training"

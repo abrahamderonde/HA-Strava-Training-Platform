@@ -7,8 +7,8 @@ Inspired by intervals.icu + Join.cc, fully under your own control.
 
 ## Features
 
-- **Garmin Connect sync** — activity import (power/HR streams and GPS included) and workout export, via `garminconnect`/`garth`
-- **Strava import** — legacy import path; Strava's API now requires a paid subscription, use Garmin for new imports
+- **Garmin Connect sync** — nightly activity import with power, HR, cadence, altitude and GPS streams (Strava import is deprecated)
+- **Ride analysis** — quick stats (duration, TSS, kJ, VI, aerobic decoupling) in Calendar and Dashboard, plus a detail view with work per power zone, hourly EF trend, W' balance, auto-detected intervals and climbs
 - **Calendar view** — monthly overview of completed activities and planned workouts, including manual FTP/weight entry
 - **Performance Management Chart (PMC)** — CTL (fitness), ATL (fatigue), TSB (form) using the Banister impulse-response model, including a forward projection based on planned workouts
 - **Power Curve** — Mean Maximal Power across all standard durations from last 60 days, with durability filters (fresh, after 1000 kJ, after 2000 kJ of work)

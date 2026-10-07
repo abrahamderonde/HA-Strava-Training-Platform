@@ -17,7 +17,9 @@ Garmin field mapping → Activity model:
   lapDTO[].messageIndex → used for power/HR streams via get_activity_details
 """
 import asyncio
+import asyncio
 import logging
+import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
 from pathlib import Path
@@ -191,63 +193,90 @@ class GarminImportService:
             logger.warning("Failed to parse activity %s: %s", raw.get("activityId"), e)
             return None
 
-    async def _fetch_power_stream(self, client, garmin_id: int, _retry: bool = True) -> Optional[List[float]]:
+    @staticmethod
+    def _tcx_float(trackpoint: Any, path: str, ns: Dict[str, str]) -> Optional[float]:
+        element = trackpoint.find(path, ns)
+        if element is None or not element.text:
+            return None
         try:
-            from garminconnect import Garmin, GarminConnectTooManyRequestsError
+            return float(element.text)
+        except ValueError:
+            return None
+
+    async def _fetch_streams(self, client: Any, garmin_id: int) -> Optional[Dict[str, Optional[List[float]]]]:
+        try:
+            from garminconnect import Garmin
             import xml.etree.ElementTree as ET
 
-            try:
-                tcx_bytes = client.download_activity(
-                    str(garmin_id),
-                    dl_fmt=Garmin.ActivityDownloadFormat.TCX,
-                )
-            except GarminConnectTooManyRequestsError:
-                if _retry:
-                    logger.warning("Rate-limited fetching TCX for %s, backing off 5s and retrying once", garmin_id)
-                    await asyncio.sleep(5.0)
-                    return await self._fetch_power_stream(client, garmin_id, _retry=False)
-                logger.warning("Rate-limited fetching TCX for %s, giving up after retry", garmin_id)
+            tcx_bytes = await asyncio.to_thread(
+                client.download_activity,
+                str(garmin_id),
+                dl_fmt=Garmin.ActivityDownloadFormat.TCX,
+            )
+            if not tcx_bytes:
                 return None
 
-            if not tcx_bytes:
-                logger.warning("No TCX data returned by Garmin for activity %s", garmin_id)
-                return None
-                
             root = ET.fromstring(tcx_bytes)
             ns = {
-                'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2',
-                'ext': 'http://www.garmin.com/xmlschemas/ActivityExtension/v2',
+                "tcx": "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2",
+                "ext": "http://www.garmin.com/xmlschemas/ActivityExtension/v2",
             }
-            trackpoints = root.findall('.//tcx:Trackpoint', ns)
-            if not trackpoints:
-                logger.warning("TCX for activity %s parsed but contains no Trackpoint elements", garmin_id)
+
+            offsets: List[float] = []
+            rows: List[Tuple[float, float, float, float, float]] = []
+            origin: Optional[datetime] = None
+            last_alt, last_dist = 0.0, 0.0
+
+            for tp in root.findall(".//tcx:Trackpoint", ns):
+                time_el = tp.find("tcx:Time", ns)
+                if time_el is None or not time_el.text:
+                    continue
+                stamp = datetime.fromisoformat(time_el.text.strip().replace("Z", "+00:00"))
+                if origin is None:
+                    origin = stamp
+                offsets.append((stamp - origin).total_seconds())
+
+                alt = self._tcx_float(tp, "tcx:AltitudeMeters", ns)
+                dist = self._tcx_float(tp, "tcx:DistanceMeters", ns)
+                last_alt = alt if alt is not None else last_alt
+                last_dist = dist if dist is not None else last_dist
+                rows.append((
+                    self._tcx_float(tp, ".//ext:Watts", ns) or 0.0,
+                    self._tcx_float(tp, "tcx:HeartRateBpm/tcx:Value", ns) or 0.0,
+                    self._tcx_float(tp, "tcx:Cadence", ns) or 0.0,
+                    last_alt,
+                    last_dist,
+                ))
+
+            if len(offsets) < 30:
                 return None
 
-            watts = []
-            for tp in trackpoints:
-                # Power is nested under Extensions/TPX/Watts
-                watts_el = tp.find('.//ext:Watts', ns)
-                if watts_el is not None and watts_el.text:
-                    try:
-                        w = float(watts_el.text)
-                        if 0 <= w <= 3000:  # sanity range for cycling power
-                            watts.append(w)
-                    except ValueError:
-                        continue
+            t = np.array(offsets, dtype=float)
+            values = np.array(rows, dtype=float)
+            grid = np.arange(int(t[-1]) + 1, dtype=float)
+            pos = np.clip(np.searchsorted(t, grid, side="right") - 1, 0, len(t) - 1)
+            moving = (grid - t[pos]) <= 10.0
 
-            if len(watts) <= 30:
-                logger.warning(
-                    "TCX for activity %s has %d trackpoints but only %d valid <Watts> "
-                    "readings — activity likely has no power meter data",
-                    garmin_id, len(trackpoints), len(watts)
-                )
-                return None
+            watts = np.clip(np.where(moving, values[pos, 0], 0.0), 0, 3000)
+            hr = np.where(moving, values[pos, 1], 0.0)
+            cadence = np.where(moving, values[pos, 2], 0.0)
 
-            return watts
-
+            has_power = int(np.sum(watts > 0)) > 30
+            return {
+                "watts": np.round(watts).astype(int).tolist() if has_power else None,
+                "hr": np.round(hr).astype(int).tolist(),
+                "cadence": np.round(cadence).astype(int).tolist(),
+                "altitude": np.round(values[pos, 3], 1).tolist(),
+                "distance": np.round(values[pos, 4], 1).tolist(),
+                "moving": moving.astype(int).tolist(),
+            }
         except Exception as e:
-            logger.warning("Could not fetch TCX power stream for activity %s: %s", garmin_id, e)
+            logger.warning("Could not fetch TCX streams for activity %s: %s", garmin_id, e)
             return None
+
+    async def _fetch_power_stream(self, client: Any, garmin_id: int) -> Optional[List[float]]:
+        streams = await self._fetch_streams(client, garmin_id)
+        return streams["watts"] if streams else None
 
     async def _get_ftp_at_date(self, target_date: datetime) -> float:
         """Look up the FTP that was in effect on a given date from FTPHistory,
@@ -317,12 +346,16 @@ class GarminImportService:
         # report power just like outdoor power meters, and excluding trainer=True here
         # was silently starving VirtualRides of TSS. Only GPS fetching should skip
         # trainer activities, since those genuinely have no location data.
-        power_stream = None
-        np_real = None
-        if fetch_streams:
+        power_stream: Optional[List[float]] = None
+        extra_streams: Dict[str, Any] = {}
+        np_real: Optional[float] = None
+        if fetch_streams and not parsed.get("trainer"):
             client = await self._get_client()
             if client:
-                power_stream = await self._fetch_power_stream(client, parsed["garmin_id"])
+                streams = await self._fetch_streams(client, parsed["garmin_id"])
+                if streams:
+                    power_stream = streams.pop("watts", None)
+                    extra_streams = streams
                 if power_stream:
                     np_real = calculate_normalized_power(power_stream)
                     if not parsed.get("average_watts"):
@@ -384,6 +417,11 @@ class GarminImportService:
             trainer=parsed["trainer"],
             commute=parsed["commute"],
             power_stream=power_stream,
+            hr_stream=extra_streams.get("hr"),
+            cadence_stream=extra_streams.get("cadence"),
+            altitude_stream=extra_streams.get("altitude"),
+            distance_stream=extra_streams.get("distance"),
+            moving_stream=extra_streams.get("moving"),
             latlng_stream=latlng_stream,
             synthetic=False,
         )

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { format, parseISO } from 'date-fns'
+import RideDetail, { QuickStats } from '../components/RideDetail'
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine
@@ -58,6 +59,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState(null)
+  const [rideId, setRideId] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -112,8 +114,9 @@ export default function Dashboard() {
     setImporting(false)
   }
 
-  return (
+   return (
     <div>
+      {rideId && <RideDetail activityId={rideId} onClose={() => setRideId(null)} />}
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 className="page-title">Dashboard</h1>
@@ -210,8 +213,10 @@ export default function Dashboard() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {activities.map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
-                padding: '8px 12px', background: 'var(--surface2)', borderRadius: 8 }}>
+              <div key={a.id} onClick={() => a.has_streams && setRideId(a.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: 12,
+                padding: '8px 12px', background: 'var(--surface2)', borderRadius: 8,
+                cursor: a.has_streams ? 'pointer' : 'default' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden',
                     textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</div>
@@ -220,19 +225,7 @@ export default function Dashboard() {
                     {a.commute && ' · 🚲 commute'}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 16, flexShrink: 0 }}>
-                  {[
-                    a.tss && [`${a.tss.toFixed(0)}`, 'TSS'],
-                    a.moving_time && [`${Math.round(a.moving_time/60)}min`, ''],
-                    a.distance > 0 && [`${(a.distance/1000).toFixed(0)}km`, ''],
-                    a.average_watts && [`${a.average_watts.toFixed(0)}W`, ''],
-                  ].filter(Boolean).map(([val, lbl]) => (
-                    <div key={lbl+val} style={{ textAlign: 'right' }}>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 14 }}>{val}</div>
-                      {lbl && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{lbl}</div>}
-                    </div>
-                  ))}
-                </div>
+                <QuickStats quick={a.quick} compact />
               </div>
             ))}
           </div>

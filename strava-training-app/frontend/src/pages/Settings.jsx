@@ -95,6 +95,14 @@ function GarminImportCard() {
         >
           ⚡ Recover Missing Power
         </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => doImport('backfill-streams?days=365', 'Ride streams backfill')}
+          disabled={!authenticated || importing}
+          title="Fetch HR, cadence, altitude and distance streams for already-imported rides — needed for ride analysis"
+        >
+          📈 Backfill ride streams
+        </button>
       </div>
 
       {msg && (

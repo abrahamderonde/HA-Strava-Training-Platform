@@ -141,6 +141,23 @@ The Power page can filter the power curve to the part of each ride after 1000 or
 
 ---
 
+## 12. Ride Analysis
+
+Click **Ride analysis** on an activity in the Calendar, or click an activity on the Dashboard, to open the detail view.
+
+**Quick stats** (Calendar and Dashboard): duration, TSS, kJ, Variability Index (NP / average power) and aerobic decoupling (EF hour 1 vs EF hour 2). Decoupling is only shown for rides of 2 hours or more moving time, otherwise `N/A`. 🟢 < 1.5% · 🟡 1.5–3.0% · 🔴 > 3.0%.
+
+**Detail view:**
+- Pacing: VI, IF (NP / FTP in effect on the ride date) and kJ per power zone
+- Durability: decoupling drift per hour and hourly EF trend (first 10 minutes and pauses are excluded)
+- W' balance: Skiba differential model, using the latest CP and W' estimate
+- Intervals: efforts of 3+ minutes above 90% FTP
+- Climbs: gradient above 3% and more than 10 m elevation gain, with VAM and average W/kg
+
+**Existing rides:** streams are stored on import from now on. For rides imported earlier, go to **Settings → Garmin Activity Import → Backfill ride streams**. Rides without a power meter, indoor/trainer rides and manual activities have no streams and show no analysis.
+
+---
+
 ## Troubleshooting
 
 **Port already in use**  
