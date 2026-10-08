@@ -9,6 +9,8 @@ import {
 const ZONE_COLORS = ['#64748b', '#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#a855f7']
 const STATUS_ICON = { green: '🟢', yellow: '🟡', red: '🔴' }
 const TOOLTIP_STYLE = { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }
+const TOOLTIP_ITEM_STYLE = { color: 'var(--text)' }
+const TOOLTIP_LABEL_STYLE = { color: 'var(--muted)', marginBottom: 4 }
 
 function formatDuration(seconds) {
   if (!seconds) return '—'
@@ -139,7 +141,14 @@ export default function RideDetail({ activityId, onClose }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="kJ" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={v => [`${v} kJ`, 'Work']} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                    formatter={(v, n, p) => [`${v} kJ`, `Z${p.payload.zone}`]}
+                    labelFormatter={() => ''}
+                  />
                   <Bar dataKey="kj" radius={[3, 3, 0, 0]}>
                     {analysis.zones.map(z => <Cell key={z.zone} fill={ZONE_COLORS[z.zone - 1]} />)}
                   </Bar>
@@ -177,8 +186,13 @@ export default function RideDetail({ activityId, onClose }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                     <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 'auto']} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE}
-                      formatter={(v, n, p) => [`${v} (NP ${p.payload.np}W / ${p.payload.hr}bpm)`, 'EF']} />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      itemStyle={TOOLTIP_ITEM_STYLE}
+                      labelStyle={TOOLTIP_LABEL_STYLE}
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                      formatter={(v, n, p) => [`${v} (NP ${p.payload.np}W / ${p.payload.hr}bpm)`, 'EF']}
+                    />
                     <Bar dataKey="ef" fill="var(--accent2)" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -200,7 +214,13 @@ export default function RideDetail({ activityId, onClose }) {
                   <XAxis dataKey="t" tick={{ fontSize: 11, fill: 'var(--muted)' }}
                     tickFormatter={formatClock} interval={Math.max(1, Math.floor(analysis.w_prime.series.length / 6))} />
                   <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 100]} unit="%" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} labelFormatter={formatClock} formatter={v => [`${v}%`, "W' bal"]} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    itemStyle={TOOLTIP_ITEM_STYLE}
+                    labelStyle={TOOLTIP_LABEL_STYLE}
+                    labelFormatter={formatClock}
+                    formatter={v => [`${v}%`, "W' bal"]}
+                  />
                   <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 2" />
                   <Area type="monotone" dataKey="pct" stroke="var(--accent)" fill="rgba(249,115,22,0.25)" dot={false} />
                 </AreaChart>
