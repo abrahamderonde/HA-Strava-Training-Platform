@@ -54,7 +54,7 @@ export default function Gemeenten() {
     const L = window.L
     leafletMap.current = L.map(mapRef.current, { center: [52.3, 5.3], zoom: 7 })
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { attribution: '© OpenStreetMap contributors', maxZoom: 19 }
+      { attribution: '© OpenStreetMap contributors', maxZoom: 19, className: 'map-tiles-dark' }
     ).addTo(leafletMap.current)
     leafletMap.current.getPane('tilePane').style.filter =
       'grayscale(35%) brightness(0.60) saturate(0.75) contrast(0.95)'

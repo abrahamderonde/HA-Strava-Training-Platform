@@ -123,7 +123,9 @@ Register this URL with Strava via their [webhook subscription API](https://devel
 
 TrainIQ periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **TrainIQ** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (TrainIQ-labeled workouts are always excluded to avoid the AI learning from its own output).
 
-Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page.
+Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page. The list is sorted by last added, so new workouts appear on top and are easy to rate.
+
+**Scan duplicates** finds workouts with identical interval structure (names are ignored). The older entry is kept, so existing stars survive (a rating on the newer one is copied only if the older has none), and it moves to the top of the list with a fresh date. The newer Garmin workout ID is remembered so later syncs don't re-import it.
 
 ---
 

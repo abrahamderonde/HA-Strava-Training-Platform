@@ -271,6 +271,13 @@ class WorkoutLibrary(Base):
     last_synced_at = Column(DateTime, nullable=True)
     times_used = Column(Integer, default=0)
 
+class WorkoutLibraryIgnored(Base):
+    __tablename__ = "workout_library_ignored"
+
+    id = Column(Integer, primary_key=True)
+    garmin_workout_id = Column(String, unique=True, index=True, nullable=False)
+    kept_entry_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 # Keep old names as aliases for any legacy references
 MunicipalityBoundary = GemeenteBoundary

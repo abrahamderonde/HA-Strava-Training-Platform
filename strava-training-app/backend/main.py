@@ -22,7 +22,7 @@ from fastapi import UploadFile, File
 from .models.database import (
     init_db, get_db, Activity, TrainingMetrics, PowerCurve,
     FTPEstimate, PlannedWorkout, TrainingGoal, StravaToken,
-    VisitedGemeente, WorkoutLibrary,
+    VisitedGemeente, WorkoutLibrary, WorkoutLibraryIgnored,
 )
 from .services.garmin_workout_library_service import GarminWorkoutLibraryService
 from .services.strava_service import StravaService
@@ -297,7 +297,9 @@ async def list_workout_library(
     q: str = None,
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(WorkoutLibrary).order_by(WorkoutLibrary.name)
+    query = select(WorkoutLibrary).order_by(
+        WorkoutLibrary.imported_at.desc(), WorkoutLibrary.id.desc()
+    )
     if source:
         query = query.where(WorkoutLibrary.source == source)
     if workout_type:
@@ -356,6 +358,45 @@ async def delete_workout_library_entry(entry_id: int, db: AsyncSession = Depends
     await db.delete(entry)
     await db.commit()
     return {"status": "deleted"}
+
+def _library_signature(entry: WorkoutLibrary) -> Optional[str]:
+    if not entry.intervals:
+        return None
+    return json.dumps(entry.intervals, sort_keys=True, default=str)
+
+
+@app.post("/trainiq/workout-library/dedupe")
+async def dedupe_workout_library(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    result = await db.execute(
+        select(WorkoutLibrary).order_by(WorkoutLibrary.imported_at.asc(), WorkoutLibrary.id.asc())
+    )
+    entries: List[WorkoutLibrary] = list(result.scalars().all())
+
+    groups: Dict[str, List[WorkoutLibrary]] = {}
+    for entry in entries:
+        sig = _library_signature(entry)
+        if sig is not None:
+            groups.setdefault(sig, []).append(entry)
+
+    removed: List[Dict[str, Any]] = []
+    now = datetime.utcnow()
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        keeper, duplicates = group[0], group[1:]
+        for dup in duplicates:
+            if keeper.rating is None and dup.rating is not None:
+                keeper.rating = dup.rating
+            db.add(WorkoutLibraryIgnored(
+                garmin_workout_id=dup.garmin_workout_id,
+                kept_entry_id=keeper.id,
+            ))
+            removed.append({"name": dup.name, "kept": keeper.name})
+            await db.delete(dup)
+        keeper.imported_at = now
+
+    await db.commit()
+    return {"duplicates_removed": len(removed), "details": removed}
 
 async def _auto_complete_commutes(db: AsyncSession) -> int:
     pending_result = await db.execute(

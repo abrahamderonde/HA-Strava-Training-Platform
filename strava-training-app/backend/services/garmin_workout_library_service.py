@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..models.database import WorkoutLibrary, PlannedWorkout
+from ..models.database import WorkoutLibrary, WorkoutLibraryIgnored, PlannedWorkout
 from .training_science import get_power_zones
 
 logger = logging.getLogger(__name__)
@@ -169,10 +169,13 @@ class GarminWorkoutLibraryService:
         )
         trainiq_ids = {row[0] for row in trainiq_result.all()}
 
+        ignored_result = await self.db.execute(select(WorkoutLibraryIgnored.garmin_workout_id))
+        ignored_ids = {row[0] for row in ignored_result.all()}
+
         created, updated, skipped = 0, 0, 0
         for summary in cycling_workouts:
             workout_id = summary.get("workoutId")
-            if not workout_id:
+            if not workout_id or str(workout_id) in ignored_ids:
                 skipped += 1
                 continue
             try:

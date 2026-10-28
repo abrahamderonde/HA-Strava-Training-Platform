@@ -20,6 +20,7 @@ export default function WorkoutLibrary() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState(null)
+  const [deduping, setDeduping] = useState(false)
   const [source, setSource] = useState('')
   const [workoutType, setWorkoutType] = useState('')
   const [q, setQ] = useState('')
@@ -53,6 +54,19 @@ export default function WorkoutLibrary() {
     setSyncing(false)
   }
 
+  const runDedupe = async () => {
+    setDeduping(true)
+    try {
+      const res = await fetch('/trainiq/workout-library/dedupe', { method: 'POST' })
+      const d = await res.json()
+      setSyncMsg(d.duplicates_removed
+        ? `Removed ${d.duplicates_removed} duplicate(s): ${d.details.map(x => x.name).join(', ')}`
+        : 'No duplicates found')
+      load()
+    } catch { setSyncMsg('Duplicate scan failed') }
+    setDeduping(false)
+  }
+
   const patch = async (id, body) => {
     await fetch(`/trainiq/workout-library/${id}`, {
       method: 'PATCH',
@@ -75,10 +89,15 @@ export default function WorkoutLibrary() {
           <h1 className="page-title">Workout Bibliotheek</h1>
           <p className="page-subtitle">Garmin cycling-workouts, gelabeld voor hergebruik in Planning</p>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={runSync} disabled={syncing}>
-          <RefreshCw size={13} className={syncing ? 'spin' : ''} />
-          {syncing ? 'Bezig…' : 'Sync met Garmin'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" onClick={runDedupe} disabled={deduping}>
+            {deduping ? 'Scanning…' : 'Scan duplicates'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={runSync} disabled={syncing}>
+            <RefreshCw size={13} className={syncing ? 'spin' : ''} />
+            {syncing ? 'Bezig…' : 'Sync met Garmin'}
+          </button>
+        </div>
       </div>
 
       {syncMsg && <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>{syncMsg}</div>}
