@@ -3306,7 +3306,8 @@ async def garmin_backfill_streams(background_tasks: BackgroundTasks, days: int =
             cutoff = datetime.now() - timedelta(days=days)
             result = await db.execute(
                 select(Activity)
-                .where(Activity.strava_id < 0)
+                .where(Activity.strava_id < -100000)
+                .where(Activity.synthetic == False)
                 .where(Activity.trainer == False)
                 .where(Activity.moving_stream.is_(None))
                 .where(Activity.start_date >= cutoff)
@@ -3329,6 +3330,11 @@ async def garmin_backfill_streams(background_tasks: BackgroundTasks, days: int =
                     a.distance_stream = streams.get("distance")
                     a.moving_stream = streams.get("moving")
                     updated += 1
+                else:
+                    logger.warning(
+                        "No streams for '%s' (%s, garmin id %d)",
+                        a.name, a.start_date.date().isoformat(), abs(a.strava_id),
+                    )
                 await asyncio.sleep(1.5)
                 if (i + 1) % 25 == 0:
                     await db.commit()
@@ -3341,7 +3347,34 @@ async def garmin_backfill_streams(background_tasks: BackgroundTasks, days: int =
     background_tasks.add_task(_backfill)
     return {"status": f"Stream backfill started for last {days} days — check logs for progress"}
 
+@app.get("/trainiq/debug/stream-test")
+async def debug_stream_test(activity_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
+    from garminconnect import Garmin
 
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if not activity or not activity.strava_id:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    svc = GarminImportService(CONFIG.get("garmin_email", ""), CONFIG.get("garmin_password", ""), db)
+    client = await svc._get_client()
+    if not client:
+        return {"error": "not authenticated"}
+
+    garmin_id = abs(activity.strava_id)
+    report: Dict[str, Any] = {"garmin_id": garmin_id, "name": activity.name, "date": activity.start_date.isoformat()}
+    for label, fmt in (("tcx", Garmin.ActivityDownloadFormat.TCX), ("gpx", Garmin.ActivityDownloadFormat.GPX)):
+        try:
+            data = await asyncio.to_thread(client.download_activity, str(garmin_id), dl_fmt=fmt)
+            report[label] = {"ok": True, "bytes": len(data or b"")}
+        except Exception as e:
+            report[label] = {"ok": False, "error": str(e)[:200]}
+    try:
+        summary = await asyncio.to_thread(client.get_activity, str(garmin_id))
+        report["summary"] = {"ok": True, "owner": (summary or {}).get("ownerDisplayName"), "name": (summary or {}).get("activityName")}
+    except Exception as e:
+        report["summary"] = {"ok": False, "error": str(e)[:200]}
+    return report
 
 
 # ─── Gemeenten / Municipalities ───────────────────────────────────────────────
