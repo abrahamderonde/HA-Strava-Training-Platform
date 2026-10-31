@@ -349,7 +349,7 @@ class GarminImportService:
         power_stream: Optional[List[float]] = None
         extra_streams: Dict[str, Any] = {}
         np_real: Optional[float] = None
-        if fetch_streams and not parsed.get("trainer"):
+        if fetch_streams:
             client = await self._get_client()
             if client:
                 streams = await self._fetch_streams(client, parsed["garmin_id"])

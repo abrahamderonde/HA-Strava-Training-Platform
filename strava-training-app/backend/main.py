@@ -3308,7 +3308,6 @@ async def garmin_backfill_streams(background_tasks: BackgroundTasks, days: int =
                 select(Activity)
                 .where(Activity.strava_id < -100000)
                 .where(Activity.synthetic == False)
-                .where(Activity.trainer == False)
                 .where(Activity.moving_stream.is_(None))
                 .where(Activity.start_date >= cutoff)
                 .order_by(Activity.start_date.desc())
