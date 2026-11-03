@@ -26,6 +26,14 @@ def export_database_copy() -> None:
         dst.close()
         src.close()
 
+def import_legacy_database() -> None:
+    if not MIGRATION_FILE.exists():
+        return
+    target: Path = Path(os.getenv("DATA_PATH", "/data/velodesk")) / "training.db"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(MIGRATION_FILE, target)
+    MIGRATION_FILE.rename(MIGRATION_FILE.with_suffix(".db.imported"))
+
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
