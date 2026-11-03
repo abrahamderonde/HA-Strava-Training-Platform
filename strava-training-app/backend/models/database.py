@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 
 import shutil
+import sqlite3
 from pathlib import Path
 
 DATABASE_URL = f"sqlite+aiosqlite:////{os.getenv('DATA_PATH', '/data/strava_training')}/training.db"
