@@ -8,16 +8,23 @@ import os
 import shutil
 from pathlib import Path
 
-MIGRATION_FILE: Path = Path("/config/trainiq_migration/training.db")
+DATABASE_URL = f"sqlite+aiosqlite:////{os.getenv('DATA_PATH', '/data/strava_training')}/training.db"
+
+MIGRATION_FILE: Path = Path("/config/velodesk_migration/training.db")
 
 
 def export_database_copy() -> None:
     source: Path = Path(os.getenv("DATA_PATH", "/data/strava_training")) / "training.db"
-    if source.exists():
-        MIGRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, MIGRATION_FILE)
-
-DATABASE_URL = f"sqlite+aiosqlite:////{os.getenv('DATA_PATH', '/data/strava_training')}/training.db"
+    if not source.exists():
+        return
+    MIGRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    src = sqlite3.connect(source)
+    dst = sqlite3.connect(MIGRATION_FILE)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
