@@ -241,17 +241,6 @@ export default function Planning() {
     }
   }
 
-  const exportToIntervals = async (workoutId) => {
-    setStatus('Pushing to intervals.icu...')
-    const res = await fetch(`/trainiq/planning/export-to-intervals/${workoutId}`, { method: 'POST' })
-    if (res.ok) {
-      setStatus('Pushed to intervals.icu — will sync to Garmin on next device sync')
-    } else {
-      const err = await res.json().catch(() => ({}))
-      setStatus(`intervals.icu export failed: ${err.detail || 'check log'}`)
-    }
-  }
-
   const exportToGarmin = async (workoutId) => {
     setStatus('Exporting to Garmin...')
     const res = await fetch(`/trainiq/planning/export-to-garmin/${workoutId}`, { method: 'POST' })

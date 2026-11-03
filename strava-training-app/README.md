@@ -33,7 +33,7 @@ Inspired by intervals.icu + Join.cc, fully under your own control.
 
 ### 2. Configure Garmin Connect (primary data source)
 
-Use your regular Garmin Connect email and password. Login/token refresh is handled via `garminconnect`/`garth`.
+Use your regular Garmin Connect email and password. Login/token refresh is handled via `python-garminconnect'.
 
 > Garmin rate-limits login attempts (429 error). See **Garmin Token Setup** in `DOCS.md` if automatic login fails.
 

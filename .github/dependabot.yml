@@ -2,7 +2,7 @@ version: 2
 updates:
   # Python dependencies
   - package-ecosystem: pip
-    directory: /strava-training-addon/backend
+    directory: /strava-training-app/backend
     schedule:
       interval: monthly
     ignore:

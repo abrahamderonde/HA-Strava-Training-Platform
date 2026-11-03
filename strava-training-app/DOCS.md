@@ -49,8 +49,6 @@ TrainIQ imports activities from Garmin Connect and pushes workouts to it using t
 In the app **Configuration** tab in Home Assistant, fill in:
 
 ```yaml
-strava_client_id: "12345"
-strava_client_secret: "your_secret_here"
 garmin_email: "you@example.com"
 garmin_password: "your_garmin_password"
 anthropic_api_key: "sk-ant-..."
@@ -60,8 +58,6 @@ ftp_initial: 250
 
 | Field | Description |
 |---|---|
-| `strava_client_id` | From strava.com/settings/api |
-| `strava_client_secret` | From strava.com/settings/api |
 | `garmin_email` | Your Garmin Connect login email |
 | `garmin_password` | Your Garmin Connect password |
 | `anthropic_api_key` | From console.anthropic.com |
@@ -80,46 +76,18 @@ For every imported activity TrainIQ uses the first available source:
 
 ---
 
-## 7. Start and Connect Strava
+## 7. Start and Import Garmin Activities
 
 1. Click **Start** on the app
 2. Open **TrainIQ** in the HA sidebar
-3. Go to **Settings** → click **Connect Strava**
-4. You'll be redirected to Strava to authorize — click **Authorize**
-5. You'll be redirected back to TrainIQ
-6. Go to **Dashboard** → **Sync Strava** to import your full activity history
+3. Go to **Settings** and check that Garmin tokens are found
+4. Click **Import full year** or **Import 5 years**, then **Backfill GPS**
 
-> The first import can take a while depending on how many activities you have.  
-> Power streams, HR streams, and GPS tracks are all fetched — be patient.
+Activities also sync automatically every night at 01:00.
 
 ---
 
-## 8. Webhook Setup (real-time sync)
-
-For new activities to appear automatically the moment you finish a ride, Strava needs to be able to reach your Home Assistant instance from the internet.
-
-**Webhook URL format:**
-```
-https://YOUR_HA_URL/api/strava/webhook
-```
-
-**With Nabu Casa:**
-```
-https://<your-id>.ui.nabu.casa/api/strava/webhook
-```
-
-**With own domain / port forwarding:**
-```
-https://yourdomain.com/api/strava/webhook
-```
-
-Register this URL with Strava via their [webhook subscription API](https://developers.strava.com/docs/webhooks/) or the Strava webhook playground.
-
-> Without a webhook, you can still manually sync by clicking **Sync Strava** on the dashboard.
-
----
-
-## 9. Workout Library
+## 8. Workout Library
 
 TrainIQ periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **TrainIQ** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (TrainIQ-labeled workouts are always excluded to avoid the AI learning from its own output).
 
@@ -129,7 +97,7 @@ Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed fro
 
 ---
 
-## 10. Municipality Map (Gemeenten)
+## 9. Municipality Map (Gemeenten)
 
 The gemeente map loads Dutch municipal boundaries from [PDOK](https://www.pdok.nl) (Dutch government open geodata) the first time you open that page. This download is cached locally — it only happens once.
 
@@ -137,13 +105,13 @@ After your Strava history is imported, go to **Gemeenten** → **Re-scan activit
 
 ---
 
-## 11. Power Curve Durability
+## 10. Power Curve Durability
 
 The Power page can filter the power curve to the part of each ride after 1000 or 2000 kJ of accumulated work, showing how much power you can still produce when fatigued. These curves are calculated nightly (or via **Recalculate**) from the stored power streams of the last 60 days. CP/FTP estimation and the ideal curve always use the fresh (0 kJ) curve.
 
 ---
 
-## 12. Ride Analysis
+## 11. Ride Analysis
 
 Click **Ride analysis** on an activity in the Calendar, or click an activity on the Dashboard, to open the detail view.
 
@@ -165,11 +133,8 @@ Click **Ride analysis** on an activity in the Calendar, or click an activity on 
 **Port already in use**  
 Change the port in the app configuration. The default is `8088`.
 
-**Strava import is slow**  
-Strava rate-limits API requests to 100 per 15 minutes. Large histories (500+ activities) may take an hour or more to fully import.
-
-**Garmin export fails**  
-Garmin occasionally changes their unofficial API. Check that your email/password are correct. Two-factor authentication on Garmin Connect may also cause issues — temporarily disable it during setup if needed.
+**Garmin import or export fails**  
+Garmin occasionally changes their unofficial API and rate-limits logins (HTTP 429). Use the token setup below.
 
 **FTP shows initial value, not estimated**  
 FTP auto-estimation requires at least 6 power data points across different durations from the last 60 days. Make sure you have rides with a power meter imported.
@@ -181,31 +146,10 @@ GPS tracks need to be stored during import. If you imported activities before th
 
 ## Garmin Token Setup (if automatic login fails)
 
-Garmin rate-limits SSO login attempts (429 error). If you see this, generate tokens manually on your PC instead:
-
-**On your PC (Windows/Mac/Linux):**
+Generate the token on your PC with python-garminconnect (`example.py`), then copy the token file to Home Assistant:
 
 ```bash
-pip install garth garminconnect
-python3 -c "
-from garminconnect import Garmin
-import os
-client = Garmin(email='your@email.com', password='yourpassword')
-client.login()
-os.makedirs('garmin_tokens', exist_ok=True)
-client.garth.dump('garmin_tokens')
-print('Tokens saved to garmin_tokens/ folder')
-"
+scp ~/.garminconnect/garmin_tokens.json root@homeassistant.local:/config/strava_training/garmin_tokens/
 ```
 
-This creates two files in a `garmin_tokens/` folder:
-- `oauth1_token.json`
-- `oauth2_token.json`
-
-**Copy them to HA** using the File Editor add-on or SSH:
-```
-/data/strava_training/garmin_tokens/oauth1_token.json
-/data/strava_training/garmin_tokens/oauth2_token.json
-```
-
-After copying, try the Garmin export again — it will load the tokens without logging in. Tokens are valid for approximately one year.
+The Settings page shows whether tokens were found.

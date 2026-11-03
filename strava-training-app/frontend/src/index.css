@@ -93,21 +93,6 @@ body {
 .nav-link:hover { color: var(--text); background: var(--surface2); }
 .nav-link.active { color: var(--accent); background: rgba(249,115,22,0.1); }
 
-.strava-connect-banner {
-  margin: 0 10px 10px;
-  padding: 10px 14px;
-  background: rgba(249,115,22,0.15);
-  border: 1px solid rgba(249,115,22,0.3);
-  border-radius: var(--radius);
-  font-size: 13px;
-  text-align: center;
-}
-
-.strava-connect-banner a {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-}
 
 .sidebar-status {
   padding: 14px 20px;

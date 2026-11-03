@@ -5,6 +5,18 @@ from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
 
+import shutil
+from pathlib import Path
+
+MIGRATION_FILE: Path = Path("/config/trainiq_migration/training.db")
+
+
+def export_database_copy() -> None:
+    source: Path = Path(os.getenv("DATA_PATH", "/data/strava_training")) / "training.db"
+    if source.exists():
+        MIGRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, MIGRATION_FILE)
+
 DATABASE_URL = f"sqlite+aiosqlite:////{os.getenv('DATA_PATH', '/data/strava_training')}/training.db"
 
 engine = create_async_engine(DATABASE_URL, echo=False)
@@ -34,7 +46,6 @@ async def init_db():
             "ALTER TABLE activities ADD COLUMN synthetic BOOLEAN DEFAULT 0",
             "ALTER TABLE activities ADD COLUMN rpe FLOAT DEFAULT NULL",
             "ALTER TABLE activities ADD COLUMN tss_source TEXT DEFAULT NULL",
-            "ALTER TABLE planned_workouts ADD COLUMN icu_description TEXT",
             "ALTER TABLE planned_workouts ADD COLUMN completed BOOLEAN DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_tss FLOAT DEFAULT NULL",
             "ALTER TABLE planned_workouts ADD COLUMN actual_duration_minutes INTEGER DEFAULT NULL",
@@ -151,7 +162,6 @@ class PlannedWorkout(Base):
     target_duration_minutes = Column(Integer, nullable=True)
     target_if = Column(Float, nullable=True)  # intensity factor
     intervals = Column(JSON, nullable=True)
-    icu_description = Column(Text, nullable=True)
     garmin_workout_id = Column(String, nullable=True)
     exported_to_garmin = Column(Boolean, default=False)
     goal_id = Column(Integer, nullable=True)

@@ -21,15 +21,11 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import UploadFile, File
 from .models.database import (
     init_db, get_db, Activity, TrainingMetrics, PowerCurve,
-    FTPEstimate, PlannedWorkout, TrainingGoal, StravaToken,
-    VisitedGemeente, WorkoutLibrary, WorkoutLibraryIgnored,
+    FTPEstimate, PlannedWorkout, TrainingGoal,
+    VisitedGemeente,
 )
-from .services.garmin_workout_library_service import GarminWorkoutLibraryService
-from .services.strava_service import StravaService
 from .services.garmin_service import GarminService
 from .services.garmin_import_service import GarminImportService
-from .services.intervals_service import IntervalsService
-from .services.intervals_service import IntervalsService
 from .services.ai_coach import AICoachService
 from .services.training_science import (
     calculate_pmc, fit_critical_power, build_power_curve,
@@ -50,17 +46,12 @@ def load_config():
             return json.load(f)
     # Dev fallback from env
     return {
-        "strava_client_id": os.getenv("STRAVA_CLIENT_ID", ""),
-        "strava_client_secret": os.getenv("STRAVA_CLIENT_SECRET", ""),
         "garmin_email": os.getenv("GARMIN_EMAIL", ""),
         "garmin_password": os.getenv("GARMIN_PASSWORD", ""),
         "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
-        "intervals_api_key": os.getenv("INTERVALS_API_KEY", ""),
-        "intervals_athlete_id": os.getenv("INTERVALS_ATHLETE_ID", ""),
         "athlete_weight_kg": int(os.getenv("ATHLETE_WEIGHT_KG", "70")),
         "ftp_initial": int(os.getenv("FTP_INITIAL", "200")),
     }
-
 CONFIG = load_config()
 scheduler = AsyncIOScheduler()
 
@@ -633,68 +624,13 @@ async def recalculate_power_curve_and_ftp(db: AsyncSession):
 # ─── Settings ────────────────────────────────────────────────────────────────
 
 @app.get("/trainiq/settings")
-async def get_settings():
-    """Return non-sensitive config values to the frontend."""
+async def get_settings() -> dict:
     return {
         "athlete_weight_kg": CONFIG.get("athlete_weight_kg", 70),
         "ftp_initial": CONFIG.get("ftp_initial", 200),
-        "strava_configured": bool(CONFIG.get("strava_client_id")),
         "garmin_configured": bool(CONFIG.get("garmin_email")),
         "anthropic_configured": bool(CONFIG.get("anthropic_api_key")),
-        "intervals_configured": bool(CONFIG.get("intervals_api_key") and CONFIG.get("intervals_athlete_id")),
-        "intervals_configured": bool(CONFIG.get("intervals_icu_api_key")),
     }
-
-
-# ─── Auth / Strava OAuth ──────────────────────────────────────────────────────
-
-@app.get("/trainiq/strava/auth-url")
-async def get_strava_auth_url(request: Request, ha_url: str = None):
-    """Return the Strava OAuth URL."""
-    if ha_url:
-        base = ha_url.rstrip("/")
-        if not base.startswith("http"):
-            base = f"http://{base}"
-        redirect_uri = f"{base}/trainiq/strava/callback"
-    else:
-        # Use host from request but with our actual port
-        host = request.headers.get("host", "homeassistant.local").split(":")[0]
-        redirect_uri = f"http://{host}:8088/trainiq/strava/callback"
-    service = StravaService(
-        CONFIG["strava_client_id"],
-        CONFIG["strava_client_secret"],
-        None,
-    )
-    return {"url": service.get_auth_url(redirect_uri)}
-
-
-@app.get("/trainiq/strava/callback")
-@app.get("/trainiq/strava/callback")
-async def strava_callback(code: str, request: Request, db: AsyncSession = Depends(get_db)):
-    service = StravaService(
-        CONFIG["strava_client_id"],
-        CONFIG["strava_client_secret"],
-        db,
-    )
-    # Reconstruct the redirect_uri that was used during authorization
-    host = request.headers.get("host", "homeassistant.local:8088").split(":")[0]
-    redirect_uri = f"http://{host}:8088/trainiq/strava/callback"
-    logger.info("Strava callback received, exchanging code with redirect_uri: %s", redirect_uri)
-    token_data = await service.exchange_code(code, redirect_uri=redirect_uri)
-    if not token_data:
-        raise HTTPException(status_code=400, detail="Failed to exchange Strava code")
-    await service.save_token(token_data)
-    return RedirectResponse(url="/?strava_connected=1")
-
-
-@app.get("/trainiq/strava/status")
-async def strava_status(db: AsyncSession = Depends(get_db)):
-    service = StravaService(
-        CONFIG["strava_client_id"],
-        CONFIG["strava_client_secret"],
-        db,
-    )
-    return await service.get_auth_status()
 
 
 # ─── Garmin Import ────────────────────────────────────────────────────────────
@@ -956,100 +892,7 @@ async def garmin_import_history(
     return {"status": f"History import started for last {days} days"}
 
 
-
-
-@app.get("/trainiq/strava/webhook")
-async def webhook_verify(
-    hub_mode: str = None,
-    hub_challenge: str = None,
-    hub_verify_token: str = None,
-):
-    """Strava webhook subscription verification."""
-    if hub_mode == "subscribe" and hub_challenge:
-        return {"hub.challenge": hub_challenge}
-    raise HTTPException(status_code=403)
-
-
-@app.post("/trainiq/strava/webhook")
-async def webhook_event(
-    request: Request,
-    background_tasks: BackgroundTasks,
-):
-    """Handle incoming Strava webhook events (new/updated activities)."""
-    data = await request.json()
-    logger.info("Webhook event: %s", data)
-
-    if data.get("object_type") == "activity" and data.get("aspect_type") == "create":
-        activity_id = data.get("object_id")
-        background_tasks.add_task(_import_single_activity_task, activity_id)
-
-    return {"status": "ok"}
-
-
-async def _import_single_activity_task(activity_id: int):
-    """Background task wrapper: opens its own DB session (the request-scoped
-    session is closed by the time this runs) then delegates to the import logic."""
-    from .models.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        await import_single_activity(activity_id, db)
-
-
-async def import_single_activity(activity_id: int, db: AsyncSession):
-    """Background task: fetch and import a single new activity."""
-    service = StravaService(
-        CONFIG["strava_client_id"],
-        CONFIG["strava_client_secret"],
-        db,
-        ftp=await get_current_ftp(db),
-    )
-    token = await service._get_valid_token()
-    if not token:
-        return
-
-    async with __import__("httpx").AsyncClient() as client:
-        resp = await client.get(
-            f"https://www.strava.com/api/v3/activities/{activity_id}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if resp.status_code == 200:
-            await service.import_activity(resp.json(), fetch_streams=True)
-            await recalculate_pmc(db)
-            await recalculate_power_curve_and_ftp(db)
-
-
 # ─── Import ──────────────────────────────────────────────────────────────────
-
-@app.post("/trainiq/strava/recalculate-tss")
-async def recalculate_all_tss(background_tasks: BackgroundTasks):
-    """Recalculate TSS for all activities using the current FTP estimate."""
-    async def _recalc_tss():
-        from .models.database import AsyncSessionLocal
-        from .services.training_science import calculate_tss_from_power
-        async with AsyncSessionLocal() as db:
-            ftp = await get_current_ftp(db)
-            logger.info("Recalculating TSS for all activities using FTP=%.1f", ftp)
-            result = await db.execute(select(Activity).where(Activity.has_power == True))
-            acts = result.scalars().all()
-            updated = 0
-            for act in acts:
-                if not act.power_stream:
-                    continue
-                tss, np_val, if_ = calculate_tss_from_power(
-                    act.power_stream, ftp, act.moving_time or 0
-                )
-                act.tss = tss
-                act.np = np_val
-                act.if_ = if_
-                updated += 1
-            await db.commit()
-            logger.info("TSS recalculated for %d activities", updated)
-            # Rebuild PMC with corrected TSS
-            await recalculate_pmc(db)
-            logger.info("PMC rebuilt after TSS recalculation")
-    background_tasks.add_task(_recalc_tss)
-    return {"status": "TSS recalculation started", "note": "PMC will rebuild automatically when done"}
-
-
 
 @app.get("/trainiq/debug/day-activities")
 async def debug_day_activities(date: str, db: AsyncSession = Depends(get_db)):
@@ -1429,81 +1272,7 @@ async def count_synthetic_commutes(db: AsyncSession = Depends(get_db)):
     return {"count": len(result.scalars().all())}
 
 
-@app.post("/trainiq/strava/backfill-latlng")
-async def backfill_latlng(background_tasks: BackgroundTasks):
-    """Re-fetch latlng streams for cycling activities that are missing GPS data."""
-    async def _backfill():
-        from .models.database import AsyncSessionLocal
-        async with AsyncSessionLocal() as db:
-            CYCLING = ["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"]
-            result = await db.execute(
-                select(Activity)
-                .where(Activity.latlng_stream == None)
-                .where(Activity.sport_type.in_(CYCLING))
-                .order_by(Activity.start_date.desc())
-            )
-            acts = result.scalars().all()
-            logger.info("Backfilling latlng for %d cycling activities without GPS", len(acts))
 
-            # Also log total cycling activities for comparison
-            total_result = await db.execute(
-                select(func.count(Activity.id))
-                .where(Activity.sport_type.in_(CYCLING))
-            )
-            total = total_result.scalar()
-            logger.info("Total cycling activities in DB: %d", total)
-            config = load_config()
-            service = StravaService(config["strava_client_id"], config["strava_client_secret"], db)
-            token = await service._get_valid_token()
-            if not token:
-                logger.error("No valid Strava token for backfill")
-                return
-            updated = 0
-            for i, act in enumerate(acts):
-                try:
-                    streams = await service._get_activity_streams(act.strava_id, token)
-                    if "latlng" in streams:
-                        raw = streams["latlng"].get("data", [])
-                        act.latlng_stream = raw[::5] if len(raw) > 5 else raw
-                        updated += 1
-                    await asyncio.sleep(0.5)  # respect rate limits
-                except Exception as e:
-                    logger.warning("Failed to fetch latlng for %s: %s", act.strava_id, e)
-                if (i + 1) % 50 == 0:
-                    await db.commit()
-                    logger.info("Backfill progress: %d/%d, %d updated", i + 1, len(acts), updated)
-            await db.commit()
-            logger.info("Backfill complete: %d activities updated with latlng", updated)
-    background_tasks.add_task(_backfill)
-    return {"status": "Backfill started"}
-
-
-
-@app.post("/trainiq/strava/import")
-async def trigger_import(background_tasks: BackgroundTasks):
-    """Trigger a full history import in the background."""
-    background_tasks.add_task(_run_full_import_task)
-    return {"status": "Import started"}
-
-
-async def _run_full_import_task():
-    from .models.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        await run_full_import(db)
-
-
-async def run_full_import(db: AsyncSession):
-    ftp = await get_current_ftp(db)
-    service = StravaService(
-        CONFIG["strava_client_id"],
-        CONFIG["strava_client_secret"],
-        db,
-        ftp=ftp,
-    )
-    result = await service.import_history()
-    logger.info("Import complete: %s", result)
-    await recalculate_pmc(db)
-    await recalculate_power_curve_and_ftp(db)
 
 
 # ─── Analytics APIs ──────────────────────────────────────────────────────────
@@ -2479,7 +2248,6 @@ async def generate_week(request: Request, db: AsyncSession = Depends(get_db)):
             target_duration_minutes=wo.get("target_duration_minutes"),
             target_if=wo.get("target_if"),
             intervals=wo.get("intervals"),
-            icu_description=wo.get("icu_description"),
             goal_id=goal.id,
         )
         db.add(workout)
@@ -2539,72 +2307,6 @@ async def save_planned_commutes(request: Request, db: AsyncSession = Depends(get
 
     await db.commit()
     return {"status": "ok", "created": created}
-
-
-@app.post("/trainiq/planning/push-to-intervals/{workout_id}")
-async def push_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
-    """Push a planned workout to intervals.icu (which syncs to Garmin automatically)."""
-    from .services.fit_writer import generate_workout_fit
-    api_key = CONFIG.get("intervals_icu_api_key", "")
-    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="intervals.icu API key not configured in app settings")
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
-    workout = result.scalar_one_or_none()
-    if not workout:
-        raise HTTPException(status_code=404, detail="Workout not found")
-    # Generate FIT file for accurate structured workout
-    try:
-        fit_bytes = generate_workout_fit(workout)
-    except Exception as e:
-        logger.warning("FIT generation failed, using description format: %s", e)
-        fit_bytes = None
-    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
-    event_id = await svc.push_workout(workout, fit_bytes=fit_bytes)
-    if not event_id:
-        raise HTTPException(status_code=500, detail="Failed to push to intervals.icu — check log")
-    return {"status": "pushed", "intervals_event_id": event_id}
-
-
-@app.get("/trainiq/planning/intervals-test")
-async def test_intervals_connection():
-    """Test intervals.icu API credentials."""
-    api_key = CONFIG.get("intervals_icu_api_key", "")
-    athlete_id = CONFIG.get("intervals_icu_athlete_id", "0")
-    if not api_key:
-        return {"ok": False, "error": "Not configured — add intervals_icu_api_key in app settings"}
-    svc = IntervalsService(api_key=api_key, athlete_id=athlete_id)
-    ok = await svc.verify_connection()
-    return {"ok": ok, "athlete_id": athlete_id}
-
-
-@app.post("/trainiq/planning/export-to-intervals/{workout_id}")
-async def export_to_intervals(workout_id: int, db: AsyncSession = Depends(get_db)):
-    """Export a planned workout to intervals.icu (which then syncs to Garmin Connect)."""
-    from .services.intervals_service import IntervalsService
-    result = await db.execute(select(PlannedWorkout).where(PlannedWorkout.id == workout_id))
-    workout = result.scalar_one_or_none()
-    if not workout:
-        raise HTTPException(status_code=404, detail="Workout not found")
-    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
-        raise HTTPException(status_code=400, detail="intervals.icu API key and athlete ID not configured")
-    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
-    ftp = await get_current_ftp(db)
-    event_id = await svc.push_workout(workout, ftp=ftp)
-    if event_id:
-        return {"status": "exported", "intervals_event_id": event_id}
-    raise HTTPException(status_code=500, detail="Failed to push workout to intervals.icu — check log")
-
-
-@app.get("/trainiq/intervals/verify")
-async def verify_intervals():
-    """Verify intervals.icu credentials."""
-    from .services.intervals_service import IntervalsService
-    if not CONFIG.get("intervals_api_key") or not CONFIG.get("intervals_athlete_id"):
-        return {"ok": False, "error": "Not configured"}
-    svc = IntervalsService(CONFIG["intervals_api_key"], CONFIG["intervals_athlete_id"])
-    return await svc.verify_connection()
-
 
 @app.get("/trainiq/planning/download-fit/{workout_id}")
 async def download_fit(workout_id: int, db: AsyncSession = Depends(get_db)):

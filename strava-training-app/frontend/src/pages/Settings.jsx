@@ -83,7 +83,7 @@ function GarminImportCard() {
           className="btn btn-ghost btn-sm"
           onClick={() => doImport('recalculate-tss', 'TSS recalculation')}
           disabled={!authenticated || importing}
-          title="Recalculate TSS using real Normalized Power instead of average power — fixes values that don't match intervals.icu"
+          title="Recalculate TSS using real Normalized Power and the FTP in effect on each activity date"
         >
           🔄 Recalculate TSS
         </button>
@@ -111,7 +111,6 @@ function GarminImportCard() {
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10, lineHeight: 1.6 }}>
         Activities sync nightly at 1:00 AM automatically. Manual import runs in the background — large imports may take a few minutes.
-        Garmin activity IDs are stored separately from Strava — both sources can coexist.
       </div>
     </div>
   )
@@ -142,7 +141,7 @@ function DuplicateFinderCard() {
     <div className="card" style={{ marginTop: 24 }}>
       <div className="card-title">Find Duplicate Activities</div>
       <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
-        <p>If a ride was imported from both Strava and Garmin, its TSS gets counted twice in the PMC,
+        <p>If a ride exists twice (for example a legacy Strava row next to its Garmin import), its TSS is counted twice in the PMC,
            causing days to show inflated (often ~2×) training load.</p>
         <p style={{ marginTop: 8 }}>This scans for same-day activities with near-identical duration — a strong signal of the same ride imported twice.</p>
       </div>
@@ -192,7 +191,6 @@ function DuplicateFinderCard() {
 export default function Settings() {
   const [config, setConfig] = useState(null)
   const [ftpData, setFtpData] = useState(null)
-  const [goalData, setGoalData] = useState(null)
   const [ftpInput, setFtpInput] = useState('')
   const [ftpSaving, setFtpSaving] = useState(false)
   const [ftpMsg, setFtpMsg] = useState(null)
@@ -203,7 +201,6 @@ export default function Settings() {
       setFtpData(d)
       if (d?.ftp) setFtpInput(String(Math.round(d.ftp)))
     }).catch(() => {})
-    fetch('/trainiq/goals').then(r => r.json()).then(setGoalData).catch(() => {})
   }, [])
 
   const saveFtp = async () => {
@@ -241,7 +238,6 @@ export default function Settings() {
   const copyCpToFtp = async () => {
     const res = await fetch('/trainiq/analytics/accept-cp-as-ftp', { method: 'POST' })
     const d = await res.json()
-    setGoalData(g => ({ ...g, current_ftp: d.new_ftp }))
     setFtpInput(String(d.new_ftp))
     setFtpMsg(`FTP updated to ${d.new_ftp}W ✓`)
     setTimeout(() => setFtpMsg(null), 3000)
@@ -271,7 +267,6 @@ export default function Settings() {
                 ['Initial FTP', `${config.ftp_initial} W`],
                 ['Garmin', config.garmin_configured ? '✓ Configured' : '— Not configured', config.garmin_configured ? 'var(--accent2)' : 'var(--muted)'],
                 ['AI Planning', config.anthropic_configured ? '✓ Configured' : '— Not configured', config.anthropic_configured ? 'var(--accent2)' : 'var(--muted)'],
-                ['intervals.icu', config.intervals_configured ? '✓ Configured' : '— Not configured', config.intervals_configured ? 'var(--accent2)' : 'var(--muted)'],
               ].map(([label, value, color], i, arr) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 6, marginBottom: 6 }}>
                   <span style={{ color: 'var(--muted)' }}>{label}</span>
@@ -279,7 +274,7 @@ export default function Settings() {
                 </div>
               ))}
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-                Change via <strong>Settings → Apps → Strava Training Platform → Configuration</strong> in HA.
+                Change via <strong>Settings → Apps → VeloDesk → Configuration</strong> in HA.
               </div>
             </div>
           ) : (
@@ -307,7 +302,7 @@ export default function Settings() {
                 <div style={{ fontSize: 11, marginTop: 2,
                   color: ftpData.estimation_method === 'single_effort' ? '#22c55e' : 'var(--muted)' }}>
                   {ftpData.estimation_method === 'single_effort'
-                    ? '✓ Single-effort method (intervals.icu-style)'
+                    ? '✓ Single-effort method'
                     : 'Multi-point fit (no single 3-30min effort available)'}
                 </div>
               )}
@@ -372,9 +367,9 @@ export default function Settings() {
 
           <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
             <strong>CP</strong> uses Morton's 3-parameter critical power model (1996). When you have one good
-            maximal effort of 3-30 minutes in the last 60 days, CP is solved directly from that single effort —
-            the same approach intervals.icu uses, and much more reliable if you don't regularly do repeated
-            max-effort tests of varying duration. It falls back to fitting all 3 parameters across multiple
+            maximal effort of 3-30 minutes in the last 60 days, CP is solved directly from that single effort,
+            which is much more reliable if you don't regularly do repeated max-effort tests of varying duration.
+            It falls back to fitting all 3 parameters across multiple
             durations only when no single qualifying effort is available.<br/>
             <strong>FTP</strong> is your manual input and is used for all TSS calculations, power zones, and workout targets. You stay in control of when it changes — use "Copy CP → FTP" when you agree with the model's estimate.<br/>
             Setting FTP here (or accepting CP) records it as effective from <strong>today</strong>. Historical TSS is calculated using whichever FTP was in effect on each activity's date — <strong>add or backdate FTP entries in the Calendar page</strong> if you know your FTP changed on a specific past date.
@@ -390,24 +385,6 @@ export default function Settings() {
             <p style={{ marginTop: 8 }}><strong>No data:</strong> Estimated from activity type and duration</p>
           </div>
         </div>
-      </div>
-
-      {/* Recalculate TSS */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <div className="card-title">Recalculate Historical TSS</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 14 }}>
-          <p>If your initial FTP was set too low, all historical power-based TSS values will be inflated, causing CTL to be too high.</p>
-          <p style={{ marginTop: 8 }}>This recalculates TSS for all power activities using the current estimated FTP, then rebuilds the PMC. Run this once after your FTP has been correctly estimated.</p>
-        </div>
-        <button className="btn btn-ghost btn-sm" onClick={async () => {
-          await fetch('/trainiq/strava/recalculate-tss', { method: 'POST' })
-          alert('TSS recalculation started — this may take a minute. PMC will rebuild automatically when done.')
-        }}>
-          Recalculate TSS + Rebuild PMC
-        </button>
-        <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--muted)' }}>
-          High-TSS activities (&gt;150) are logged in detail — check the add-on log after recalculating
-        </span>
       </div>
 
       <DuplicateFinderCard />
