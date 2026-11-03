@@ -2,7 +2,7 @@ version: 2
 updates:
   # Python dependencies
   - package-ecosystem: pip
-    directory: /strava-training-app/backend
+    directory: /velodesk/backend
     schedule:
       interval: monthly
     ignore:
@@ -26,7 +26,7 @@ updates:
 
   # npm / frontend dependencies
   - package-ecosystem: npm
-    directory: /strava-training-addon/frontend
+    directory: /velodesk/frontend
     schedule:
       interval: monthly
     ignore:
@@ -35,6 +35,6 @@ updates:
 
   # Docker base image
   - package-ecosystem: docker
-    directory: /strava-training-addon
+    directory: /velodesk
     schedule:
       interval: monthly
