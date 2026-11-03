@@ -2145,12 +2145,17 @@ async def get_zones(db: AsyncSession = Depends(get_db)):
 async def get_activities(
     page: int = 1,
     per_page: int = 20,
-    sport_type: str = None,
+    sport_type: Optional[str] = None,
+    exclude_commutes: bool = False,
     db: AsyncSession = Depends(get_db),
-):
+) -> List[Dict]:
     query = select(Activity).order_by(Activity.start_date.desc())
     if sport_type:
         query = query.where(Activity.sport_type == sport_type)
+    if exclude_commutes:
+        query = query.where(
+            or_(Activity.commute == False, Activity.commute.is_(None))
+        )
     query = query.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     activities = result.scalars().all()

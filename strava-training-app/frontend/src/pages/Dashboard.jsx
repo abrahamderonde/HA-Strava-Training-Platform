@@ -67,7 +67,7 @@ export default function Dashboard() {
       fetch(`/trainiq/analytics/pmc?days=${days}`).then(r => r.json()).catch(() => []),
       fetch('/trainiq/analytics/pmc-future?days=14').then(r => r.json()).catch(() => []),
       fetch('/trainiq/analytics/ftp').then(r => r.json()).catch(() => ({})),
-      fetch('/trainiq/activities?per_page=7').then(r => r.json()).catch(() => []),
+      fetch('/trainiq/activities?per_page=7&exclude_commutes=true').then(r => r.json()).catch(() => []),      fetch('/trainiq/activities?per_page=7').then(r => r.json()).catch(() => []),
     ]).then(([pmcData, futureData, ftpData, actData]) => {
       setPmc(Array.isArray(pmcData) ? pmcData : [])
       setFuture(Array.isArray(futureData) ? futureData : [])
