@@ -9,10 +9,11 @@ import Eddington from './pages/Eddington'
 import Settings from './pages/Settings'
 import CommuteGenerator from './pages/CommuteGenerator'
 import Stats from './pages/Stats'
+import Logo from './components/Logo'
 import WorkoutLibrary from './pages/WorkoutLibrary'
 import {
   LayoutDashboard, Calendar as CalIcon, TrendingUp,
-  Zap, Target, Settings as SettingsIcon, Activity,
+  Zap, Target, Settings as SettingsIcon,
   Map, Award, Bike, BarChart2, Menu, X, Library
 } from 'lucide-react'
 import './index.css'
@@ -89,8 +90,7 @@ export default function App() {
 
         <nav className="sidebar">
           <div className="sidebar-logo">
-            <Activity size={24} />
-            <span>TrainIQ</span>
+            <Logo />
           </div>
           <div style={{ fontSize: 9, color: 'var(--muted)', padding: '0 16px', marginTop: -8, marginBottom: 8, opacity: 0.5 }}>
             build 2026-07-08-01

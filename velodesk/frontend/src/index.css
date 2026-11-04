@@ -1,14 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@800&family=Syne:wght@400;600;700;800&display=swap');
 
 :root {
-  --bg:        #0a0c10;
-  --surface:   #111318;
-  --surface2:  #181c24;
-  --border:    #252a35;
+  --brand-navy:  #1a2333;
+  --brand-green: #25855a;
+  --bg:        #0e131c;
+  --surface:   #151c29;
+  --surface2:  #1a2333;
+  --card:      var(--surface);
+  --border:    #2a3548;
   --text:      #e8eaf0;
-  --muted:     #6b7280;
-  --accent:    #f97316;       /* orange — strava-ish */
-  --accent2:   #3b82f6;       /* blue   */
+  --muted:     #7b879b;
+  --accent:      #25855a;
+  --accent-text: #3fb27f;
+  --accent2:   #3b82f6;
   --green:     #22c55e;
   --red:       #ef4444;
   --yellow:    #eab308;
@@ -60,13 +64,20 @@ body {
   align-items: center;
   gap: 10px;
   padding: 0 20px 20px;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  color: var(--accent);
+  color: var(--text);
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
+
+.logo-wordmark {
+  font-family: 'Montserrat', var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+.logo-wordmark span { color: var(--accent-text); }
 
 .nav-links {
   list-style: none;
@@ -91,7 +102,7 @@ body {
 }
 
 .nav-link:hover { color: var(--text); background: var(--surface2); }
-.nav-link.active { color: var(--accent); background: rgba(249,115,22,0.1); }
+.nav-link.active { color: var(--accent-text); background: rgba(37,133,90,0.15); }
 
 
 .sidebar-status {
@@ -225,7 +236,7 @@ body {
   color: #fff;
 }
 
-.btn-primary:hover { background: #ea6c10; }
+.btn-primary:hover { background: #1f6f4b; }
 
 .btn-ghost {
   background: var(--surface2);
@@ -406,7 +417,7 @@ body {
   padding: 0;
 }
 
-.mobile-nav-item.active { color: var(--accent); }
+.mobile-nav-item.active { color: var(--accent-text); }
 
 /* ── Mobile "More" slide-over menu ── */
 .mobile-more-overlay {
@@ -483,7 +494,7 @@ body {
   z-index: 1001;
   background: var(--card);
   border: 1px solid var(--border);
-  border-left: 4px solid #f97316;
+  border-left: 4px solid var(--accent);
   border-radius: 8px;
   padding: 14px 16px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.4);
@@ -518,7 +529,7 @@ body {
 
 .cp-btn-primary {
   border: none;
-  background: #f97316;
+  background: var(--accent);
   color: #fff;
 }
 
