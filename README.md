@@ -2,7 +2,7 @@
   <img src=".github/assets/velodesk_logo (1).png" alt="VeloDesk Logo" width="180" height="180">
 </p>
 
-# TrainIQ — Strava Training Platform
+# VeloDesk — Cycling Training Platform
 
 > A self-hosted cycling training platform for Home Assistant.  
 > Inspired by intervals.icu, Join.cc and wielervrienden.nl — fully under your own control.
