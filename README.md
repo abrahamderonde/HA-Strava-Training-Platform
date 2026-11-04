@@ -1,4 +1,4 @@
-<p align="center">
+<p align="left">
   <img src=".github/assets/velodesk_logo (1).png" alt="VeloDesk Logo" width="180" height="180">
 </p>
 
