@@ -13,21 +13,21 @@
 Full documentation: [VeloDesk](./velodesk)
 
 ## Features
-📊 Training Analytics (PMC, power curve incl. durability after 1000/2000 kJ)
+📊 Training Analytics
 
-⌚ Garmin Connect sync (Strava import is deprecated; only legacy data remains usable)
+⌚ Garmin Connect sync
 
 📅 Activity Management & Calendar
 
-🗺️ Long term NL challenge (idea of Frank van Moorsel)
+🗺️ Long term NL challenge
 
 📈 Eddington number
 
 🤖 AI Workout generation
 
-🔬 Ride analysis (VI, aerobic decoupling, W' balance, interval and climb detection)
+🔬 Ride analysis
 
-📚 Workout Library (Garmin sync)
+📚 Workout Library
 
 ---
 
