@@ -1,6 +1,10 @@
-<p align="left">
-  <img src=".github/assets/velodesk_logo (1).png" alt="VeloDesk Logo" width="180" height="180">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="velodesk/logo-dark.svg">
+    <img src="velodesk/logo.svg" alt="VeloDesk" width="200">
+  </picture>
 </p>
+
 
 # VeloDesk — Cycling Training Platform
 
