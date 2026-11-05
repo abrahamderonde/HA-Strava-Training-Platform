@@ -20,7 +20,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from typing import Any, Dict, List, Optional, Set
 from fastapi import UploadFile, File
 from .models.database import (
-    init_db, export_database_copy, get_db, Activity, TrainingMetrics, PowerCurve,
+    init_db, import_legacy_database, get_db, Activity, TrainingMetrics, PowerCurve,
     FTPEstimate, PlannedWorkout, TrainingGoal,
     VisitedGemeente,
 )
@@ -58,8 +58,8 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import_legacy_database()
     await init_db()
-    export_database_copy()
     
     # Schedule nightly PMC recalculation
     scheduler.add_job(

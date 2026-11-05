@@ -1,4 +1,11 @@
-# TrainIQ — Strava Training Platform for Home Assistant
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+    <img src="logo.svg" alt="VeloDesk" width="200">
+  </picture>
+</p>
+
+# VeloDesk — Cycling Training Platform for Home Assistant
 
 A self-hosted cycling training platform running as a Home Assistant app.
 Inspired by intervals.icu + Join.cc, fully under your own control.

@@ -1,6 +1,6 @@
-# TrainIQ — Setup & Configuration
+# VeloDesk — Setup & Configuration
 
-Complete setup instructions for the TrainIQ Home Assistant app.
+Complete setup instructions for the VeloDesk Home Assistant app.
 
 ---
 
@@ -8,31 +8,18 @@ Complete setup instructions for the TrainIQ Home Assistant app.
 
 1. In Home Assistant go to **Settings → Apps → App Store**
 2. Click the three-dot menu → **Repositories**
-3. Add: `https://github.com/abrahamderonde/HA-Strava-Training-Platform`
-4. Find **TrainIQ — Strava Training Platform** and click **Install**
+3. Add: `https://github.com/abrahamderonde/HA-VeloDesk`
+4. Find **VeloDesk - Cycling Training Platform** and click **Install**
 
 ---
 
-## 2. Configure the Strava API
+## 2. Configure Garmin Connect
 
-TrainIQ needs its own Strava API application to access your data.
-
-1. Go to [strava.com/settings/api](https://www.strava.com/settings/api)
-2. Create a new application:
-   - **App Name**: TrainIQ (or anything you like)
-   - **Website**: Your Home Assistant URL
-   - **Authorization Callback Domain**: Your HA hostname or IP (e.g. `homeassistant.local`)
-3. Copy your **Client ID** and **Client Secret** — you'll need these in step 5
+VeloDesk imports activities from Garmin Connect and pushes workouts to it using the `python-garminconnect` library. Generate the token file on your PC (run `example.py` from python-garminconnect) and copy `garmin_tokens.json` to `/config/strava_training/garmin_tokens/`. Email and password are only used as a fallback when no valid tokens are found.
 
 ---
 
-## 3. Configure Garmin Connect
-
-TrainIQ imports activities from Garmin Connect and pushes workouts to it using the `python-garminconnect` library. Generate the token file on your PC (run `example.py` from python-garminconnect) and copy `garmin_tokens.json` to `/config/strava_training/garmin_tokens/`. Email and password are only used as a fallback when no valid tokens are found.
-
----
-
-## 4. Configure the Anthropic API (AI workout planning)
+## 3. Configure the Anthropic API (AI workout planning)
 
 1. Sign up at [console.anthropic.com](https://console.anthropic.com)
 2. Go to **API Keys** → **Create Key**
@@ -44,7 +31,7 @@ TrainIQ imports activities from Garmin Connect and pushes workouts to it using t
 
 ---
 
-## 5. App Configuration
+## 4. App Configuration
 
 In the app **Configuration** tab in Home Assistant, fill in:
 
@@ -66,9 +53,9 @@ ftp_initial: 250
 
 ---
 
-## 6. TSS Calculation
+## 5. TSS Calculation
 
-For every imported activity TrainIQ uses the first available source:
+For every imported activity VeloDesk uses the first available source:
 
 1. **Power** – Normalized Power from the TCX power stream, only if at least 50% of the samples are above 0 W
 2. **Heart rate** – hrTSS, used when power is missing or unusable (e.g. a power meter failure)
@@ -76,10 +63,10 @@ For every imported activity TrainIQ uses the first available source:
 
 ---
 
-## 7. Start and Import Garmin Activities
+## 6. Start and Import Garmin Activities
 
 1. Click **Start** on the app
-2. Open **TrainIQ** in the HA sidebar
+2. Open **VeloDesk** in the HA sidebar
 3. Go to **Settings** and check that Garmin tokens are found
 4. Click **Import full year** or **Import 5 years**, then **Backfill GPS**
 
@@ -87,9 +74,9 @@ Activities also sync automatically every night at 01:00.
 
 ---
 
-## 8. Workout Library
+## 7. Workout Library
 
-TrainIQ periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **TrainIQ** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (TrainIQ-labeled workouts are always excluded to avoid the AI learning from its own output).
+VeloDesk periodically syncs all cycling workouts from your Garmin workout templates into a local library, labeling each as **Join** (name contains "join"), **VeloDesk** (previously exported by this app), or **Overig**. Use the **Bibliotheek** page to browse, re-label, rate, or delete entries, or trigger a manual sync. Rated/labeled workouts can be picked directly on the Planning page, and are used as few-shot examples for AI workout generation (VeloDesk-labeled workouts are always excluded to avoid the AI learning from its own output).
 
 Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed from the library, only manually via the Bibliotheek page. The list is sorted by last added, so new workouts appear on top and are easy to rate.
 
@@ -97,7 +84,7 @@ Sync runs nightly at 3:00 AM; deleted Garmin workouts are never auto-removed fro
 
 ---
 
-## 9. Municipality Map (Gemeenten)
+## 8. Municipality Map (Gemeenten)
 
 The gemeente map loads Dutch municipal boundaries from [PDOK](https://www.pdok.nl) (Dutch government open geodata) the first time you open that page. This download is cached locally — it only happens once.
 
@@ -105,13 +92,13 @@ After your Strava history is imported, go to **Gemeenten** → **Re-scan activit
 
 ---
 
-## 10. Power Curve Durability
+## 9. Power Curve Durability
 
 The Power page can filter the power curve to the part of each ride after 1000 or 2000 kJ of accumulated work, showing how much power you can still produce when fatigued. These curves are calculated nightly (or via **Recalculate**) from the stored power streams of the last 60 days. CP/FTP estimation and the ideal curve always use the fresh (0 kJ) curve.
 
 ---
 
-## 11. Ride Analysis
+## 10. Ride Analysis
 
 Click **Ride analysis** on an activity in the Calendar, or click an activity on the Dashboard, to open the detail view.
 
